@@ -67,8 +67,8 @@ func NewV4L2Camera(path string) (*V4L2Camera, error) {
 	ch := make(chan *Frame, 1)
 	cancel := make(chan struct{}, 1)
 	v := &V4L2Camera{
-		width:  largest.MaxWidth,
-		height: largest.MaxHeight,
+		width:  int(largest.MaxWidth),
+		height: int(largest.MaxHeight),
 		ch:     ch,
 		cancel: cancel,
 	}
