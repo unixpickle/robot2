@@ -1,0 +1,15 @@
+{
+  "name": "robot2-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vite": "^6.4.3"
+  }
+}

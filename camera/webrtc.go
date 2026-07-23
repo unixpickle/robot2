@@ -64,14 +64,20 @@ func (w *WebRTCSessions) ServeHTTP(wr http.ResponseWriter, r *http.Request) {
 }
 
 func (w *WebRTCSessions) handleConnect(wr http.ResponseWriter, r *http.Request) {
-	trackName := r.FormValue("track")
-	if trackName == "" {
+	var payload struct {
+		Track string `json:"track"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		w.serveError(wr, &WebError{Code: http.StatusBadRequest, Message: err.Error()})
+		return
+	}
+	if payload.Track == "" {
 		w.serveError(wr, errMissingTrack)
 		return
 	}
 	var track *CameraTrack
 	for _, t := range w.tracks {
-		if t.Name == trackName {
+		if t.Name == payload.Track {
 			track = t
 			break
 		}
