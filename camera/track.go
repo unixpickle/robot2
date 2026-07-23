@@ -2,6 +2,7 @@ package camera
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -22,9 +23,9 @@ func NewCameraTrack(cam Camera, name string, ctx context.Context) (*CameraTrack,
 			// TODO: perhaps the profile-level-id should come from the h264 encoder, but for now
 			// we hardcode to the following:
 			// * Hex 42 is decimal 66, which identifies the H.264 Baseline profile family.
-			// * I'm not quite sure what e0 is, but it's likely some bit flags
-			// * Hex 1f is decimal 31, meaning H.264 level 3.1.
-			SDPFmtpLine: "packetization-mode=1;profile-level-id=42e01f;level-asymmetry-allowed=1",
+			// * I'm not quite sure what c0 is, but it's likely some bit flags for constrained profiles.
+			// * Hex 28 is level 4.0.
+			SDPFmtpLine: "packetization-mode=1;profile-level-id=42c028;level-asymmetry-allowed=1",
 		},
 		name,
 		"cameras",
@@ -48,6 +49,7 @@ func NewCameraTrack(cam Camera, name string, ctx context.Context) (*CameraTrack,
 			select {
 			case frameTimes <- packet.Time:
 				if err := encoder.WriteFrame(packet.Image); err != nil {
+					log.Printf("error writing camera frame: %s", err)
 					return
 				}
 			default:
@@ -58,15 +60,22 @@ func NewCameraTrack(cam Camera, name string, ctx context.Context) (*CameraTrack,
 	}()
 	go func() {
 		defer encoder.Cancel()
+		var prevFrame []byte
+		var prevTime time.Time
 		for {
 			frame, err := encoder.ReadFrame()
 			if err != nil {
 				return
 			}
 			ts := <-frameTimes
-			if err := track.WriteSample(media.Sample{Data: frame, Timestamp: ts}); err != nil {
-				return
+			if prevFrame != nil {
+				duration := ts.Sub(prevTime)
+				if err := track.WriteSample(media.Sample{Data: prevFrame, Duration: duration}); err != nil {
+					return
+				}
 			}
+			prevTime = ts
+			prevFrame = frame
 		}
 	}()
 

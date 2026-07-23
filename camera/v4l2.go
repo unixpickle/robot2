@@ -49,8 +49,8 @@ func NewV4L2Camera(path string) (*V4L2Camera, error) {
 	framerate := framerates[0]
 	for _, fr := range framerates {
 		rate := float64(fr.MaxNumerator) / float64(fr.MaxDenominator)
-		prevRate := float64(framerate.MaxNumerator) / float64(fr.MaxDenominator)
-		if math.Abs(rate-1/30) < math.Abs(prevRate-1/30) {
+		prevRate := float64(framerate.MaxNumerator) / float64(framerate.MaxDenominator)
+		if math.Abs(rate-1.0/30) < math.Abs(prevRate-1.0/30) {
 			framerate = fr
 		}
 	}
@@ -59,7 +59,7 @@ func NewV4L2Camera(path string) (*V4L2Camera, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = wc.SetFramerate(float32(framerate.MaxNumerator) / float32(framerate.MaxDenominator))
+	err = wc.SetFramerate(float32(framerate.MaxDenominator) / float32(framerate.MaxNumerator))
 	if err != nil {
 		return nil, err
 	}

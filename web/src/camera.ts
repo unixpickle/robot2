@@ -1,3 +1,8 @@
+interface APIResponse<T> {
+  error?: string;
+  data?: T;
+}
+
 interface ConnectResponse {
   session: string;
   offer: RTCSessionDescriptionInit;
@@ -58,8 +63,12 @@ export class CameraView {
   public showStream(stream: MediaStream) {
     this.element.innerHTML = '';
     const vidElement = document.createElement('video');
+    vidElement.autoplay = true;
+    vidElement.playsInline = true; // maybe helps for mobile browsers
+    vidElement.muted = true; // without this, chrome refuses to play before user interaction
     vidElement.srcObject = stream;
     vidElement.className = 'camera-video';
+    vidElement.addEventListener('loadedmetadata', () => vidElement.play(), { once: true });
     this.element.appendChild(vidElement);
   }
 }
@@ -77,20 +86,20 @@ class CameraRTCConnection {
   constructor(track: string) {
     this.track = track;
     this.pc = new RTCPeerConnection({
-      iceServers: [{urls: "stun:stun.l.google.com:19302"}],
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
     this.closed = false;
     this.pc.addEventListener('connectionstatechange', (event) => {
       if (this.pc.connectionState == "closed" || this.pc.connectionState == "failed") {
         if (!this.closed) {
           this.closed = true;
-	  this.pc.close();
-	  if (this.pc.connectionState == 'closed') {
+          this.pc.close();
+          if (this.pc.connectionState == 'closed') {
             this.onclose();
           } else {
-            this.onerror('RTC connection in failed state'); 
+            this.onerror('RTC connection in failed state');
           }
-	}
+        }
       }
     });
     this.pc.addEventListener('track', (event) => {
@@ -105,20 +114,21 @@ class CameraRTCConnection {
 
   public async connect() {
     try {
-      const created: ConnectResponse = await apiRequest(
+      const created: ConnectResponse = await this.apiRequest(
         `connect?track=${encodeURIComponent(this.track)}`,
-        {track: this.track},
+        { track: this.track },
       );
       this.session = created.session;
       this.pc.addEventListener('icecandidate', (event) => {
-        apiRequest<boolean>("addicecandidate", event.candidate ? [event.candidate] : [], this.session).catch((e) => {
+        const candidates = event.candidate ? [event.candidate] : [];
+        this.apiRequest<any>("addicecandidates", candidates).catch((e) => {
           this.flagError(e);
-	});
+        });
       });
-      this.pc.setRemoteDescription(created.offer);
+      await this.pc.setRemoteDescription(created.offer);
       const answer = await this.pc.createAnswer();
       await this.pc.setLocalDescription(answer);
-      await apiRequest<boolean>("answer", this.pc.localDescription, this.session);
+      await this.apiRequest<any>("answer", this.pc.localDescription);
       await this.pollICE();
     } catch (e) {
       this.flagError(e);
@@ -139,52 +149,47 @@ class CameraRTCConnection {
       if (this.closed) {
         return;
       }
-      const nextResponse: ICECandidatesResponse = await apiRequest("icecandidates", {}, this.session);
+      const nextResponse: ICECandidatesResponse = await this.apiRequest("icecandidates", {});
       for (let i = seen; i < nextResponse.candidates.length; i++) {
-        this.pc.addIceCandidate(nextResponse.candidates[i]);
+        await this.pc.addIceCandidate(nextResponse.candidates[i]);
       }
       seen = nextResponse.candidates.length;
       if (nextResponse.done) {
         this.pc.addIceCandidate(null);
-	return;
+        return;
       }
 
       // Wait before next poll.
-      await wait(2);
+      await wait(2000);
+    }
+  }
+
+  private async apiRequest<T>(apiName: string, payload: any): Promise<T> {
+    try {
+      let url = "/camera/" + apiName;
+      if (this.session) {
+        url = url + "?session=" + this.session;
+      }
+      const result = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const obj: APIResponse<T> = await result.json();
+      if (obj['error']) {
+        throw 'error from server:' + obj.error;
+      }
+      return obj.data as T;
+    } catch (e) {
+      throw 'webrtc api ' + apiName + ' failed with error: ' + e;
     }
   }
 }
 
 async function wait(t: number): Promise<any> {
   return new Promise((resolve, reject) => {
-    setTimeout(function() {
+    setTimeout(function () {
       resolve(null);
     }, t);
   });
-}
-
-interface APIResponse<T> {
-  error?: string;
-  data?: T;
-}
-
-async function apiRequest<T>(apiName: string, payload: any, session?: string): Promise<T> {
-  try {
-    let url = "/camera/" + apiName;
-    if (session) {
-      url = url + "?session=" + session
-    }
-    const result = await fetch(url, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(payload),
-    });
-    const obj: APIResponse<T> = await result.json();
-    if (obj['error']) {
-      throw new Error(obj.error);
-    }
-    return obj.data as T;
-  } catch (e) {
-    throw new Error('webrtc api ' + apiName + ' failed with error: ' + e);
-  }
 }

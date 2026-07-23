@@ -133,8 +133,7 @@ func (w *WebRTCSessions) handleRemoteICECandidates(wr http.ResponseWriter, r *ht
 		if err := json.NewDecoder(r.Body).Decode(&candidates); err != nil {
 			return nil, err
 		}
-		s.HandleICECandidates(candidates)
-		return true, nil
+		return true, s.HandleICECandidates(candidates)
 	})
 }
 
@@ -210,13 +209,16 @@ type webRTCSession struct {
 	iceDone       bool
 
 	clientLock sync.Mutex
+
+	pendingRemoteCandidates []webrtc.ICECandidateInit
+	remoteCandidatesDone    bool
 }
 
 func newWebRTCSession(track *CameraTrack) (*webRTCSession, error) {
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
-				URLs: []string{"stun.l.google.com:19302"},
+				URLs: []string{"stun:stun.l.google.com:19302"},
 			},
 		},
 	})
@@ -273,12 +275,30 @@ func (w *webRTCSession) HandleAnswer(answer webrtc.SessionDescription) error {
 	if w.peerConn.RemoteDescription() != nil {
 		return errAlreadyAnswered
 	}
-	return w.peerConn.SetRemoteDescription(answer)
+	if err := w.peerConn.SetRemoteDescription(answer); err != nil {
+		return err
+	}
+	for _, x := range w.pendingRemoteCandidates {
+		if err := w.peerConn.AddICECandidate(x); err != nil {
+			return err
+		}
+	}
+	w.pendingRemoteCandidates = nil
+	return nil
 }
 
 func (w *webRTCSession) HandleICECandidates(candidates []webrtc.ICECandidateInit) error {
 	w.clientLock.Lock()
 	defer w.clientLock.Unlock()
+	if w.peerConn.RemoteDescription() == nil {
+		// We cannot add ICE candidates until we have an answer, which may already
+		// be inflight but not here yet due to racing.
+		w.pendingRemoteCandidates = append(w.pendingRemoteCandidates, candidates...)
+		if len(candidates) == 0 {
+			w.pendingRemoteCandidates = append(w.pendingRemoteCandidates, webrtc.ICECandidateInit{})
+		}
+		return nil
+	}
 	for _, x := range candidates {
 		if err := w.peerConn.AddICECandidate(x); err != nil {
 			return err

@@ -1,4 +1,4 @@
-import {CameraView} from './camera';
+import { CameraView } from './camera';
 
 class App {
   public element: HTMLElement;
