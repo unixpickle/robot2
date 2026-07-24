@@ -8,7 +8,9 @@ class App {
 
   constructor() {
     this.element = document.getElementById('container') as HTMLElement;
-    this.camContainer = this.element.getElementsByClassName('camera-container')[0] as HTMLElement;
+    this.camContainer = this.element.getElementsByClassName(
+      'camera-container',
+    )[0] as HTMLElement;
     this.topCam = new CameraView('top');
     this.bottomCam = new CameraView('bottom');
     this.camContainer.appendChild(this.topCam.element);

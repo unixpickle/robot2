@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"image/jpeg"
-	"math"
 	"sync"
 	"time"
 
@@ -12,6 +11,12 @@ import (
 )
 
 const pixelFormatMJPG webcam.PixelFormat = 1196444237
+
+const (
+	targetWidth             = 640
+	targetFPS               = 15
+	maxSuccessiveJPEGErrors = 10
+)
 
 type V4L2Camera struct {
 	width  int
@@ -34,41 +39,58 @@ func NewV4L2Camera(path string) (*V4L2Camera, error) {
 	}
 	format := pixelFormatMJPG
 	sizes := wc.GetSupportedFrameSizes(format)
-	var largest webcam.FrameSize
+
+	var chosenWidth, chosenHeight uint32
 	for _, fs := range sizes {
-		if fs.StepWidth == 0 && fs.MinWidth == fs.MaxWidth && fs.MaxWidth > largest.MaxWidth {
-			largest = fs
+		// For now, only support constant frame sizes
+		if fs.StepWidth == 0 && fs.MinWidth == fs.MaxWidth && fs.MinHeight == fs.MaxHeight {
+			if fs.MaxWidth <= targetWidth {
+				if fs.MaxWidth > chosenWidth || (fs.MaxWidth == chosenWidth && fs.MaxHeight > chosenHeight) {
+					chosenWidth = fs.MaxWidth
+					chosenHeight = fs.MaxHeight
+				}
+			}
 		}
 	}
-	if largest.MaxWidth == 0 {
+	if chosenWidth == 0 {
 		return nil, errors.New("no supported frame size was found for camera: " + path)
 	}
 
 	// Find framerate closest to 30fps
-	framerates := wc.GetSupportedFramerates(format, largest.MinWidth, largest.MinHeight)
-	framerate := framerates[0]
+	framerates := wc.GetSupportedFramerates(format, chosenWidth, chosenHeight)
+	var chosenFPS float32
 	for _, fr := range framerates {
-		rate := float64(fr.MaxNumerator) / float64(fr.MaxDenominator)
-		prevRate := float64(framerate.MaxNumerator) / float64(framerate.MaxDenominator)
-		if math.Abs(rate-1.0/30) < math.Abs(prevRate-1.0/30) {
-			framerate = fr
+		if fr.MinNumerator != fr.MaxNumerator || fr.MinDenominator != fr.MaxDenominator {
+			// Only support constant framerates for now
+			continue
+		}
+		fps := float32(fr.MaxDenominator) / float32(fr.MaxNumerator)
+		if chosenFPS == 0 || abs(fps-targetFPS) < abs(chosenFPS-targetFPS) {
+			chosenFPS = fps
 		}
 	}
+	if chosenFPS == 0 {
+		return nil, errors.New("no supported frame size was found for camera: " + path)
+	}
 
-	_, _, _, err = wc.SetImageFormat(format, largest.MaxWidth, largest.MaxHeight)
+	_, _, _, err = wc.SetImageFormat(format, chosenWidth, chosenHeight)
 	if err != nil {
 		return nil, err
 	}
-	err = wc.SetFramerate(float32(framerate.MaxDenominator) / float32(framerate.MaxNumerator))
+	err = wc.SetFramerate(chosenFPS)
 	if err != nil {
 		return nil, err
 	}
+
+	// Reduce buffer memory consumption and allow quicker backpressure
+	// from the encoder.
+	wc.SetBufferCount(4)
 
 	ch := make(chan *Frame, 1)
 	cancel := make(chan struct{}, 1)
 	v := &V4L2Camera{
-		width:  int(largest.MaxWidth),
-		height: int(largest.MaxHeight),
+		width:  int(chosenWidth),
+		height: int(chosenHeight),
 		ch:     ch,
 		cancel: cancel,
 	}
@@ -80,6 +102,7 @@ func NewV4L2Camera(path string) (*V4L2Camera, error) {
 			return
 		}
 		defer wc.StopStreaming()
+		successiveErrors := 0
 		for {
 			select {
 			case <-cancel:
@@ -104,11 +127,16 @@ func NewV4L2Camera(path string) (*V4L2Camera, error) {
 				continue
 			}
 			img, err := jpeg.Decode(bytes.NewReader(frame))
-			wc.ReleaseFrame(idx)
 			if err != nil {
-				v.setError(err)
-				return
+				successiveErrors += 1
+				if successiveErrors == maxSuccessiveJPEGErrors {
+					v.setError(err)
+					return
+				}
+				continue
 			}
+			successiveErrors = 0
+			wc.ReleaseFrame(idx)
 			select {
 			case ch <- &Frame{Image: img, Time: t}:
 			case <-cancel:
@@ -146,4 +174,11 @@ func (v *V4L2Camera) setError(err error) {
 	v.errLock.Lock()
 	v.err = err
 	v.errLock.Unlock()
+}
+
+func abs(x float32) float32 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

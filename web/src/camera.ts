@@ -35,7 +35,7 @@ export class CameraView {
       this.conn.close();
     }
     this.conn = new CameraRTCConnection(this.track);
-    this.conn.onclose = () => this.showError("connection closed");
+    this.conn.onclose = () => this.showError('connection closed');
     this.conn.onerror = (e) => this.showError(e);
     this.conn.onstream = (stream) => this.showStream(stream);
     this.conn.connect();
@@ -68,7 +68,9 @@ export class CameraView {
     vidElement.muted = true; // without this, chrome refuses to play before user interaction
     vidElement.srcObject = stream;
     vidElement.className = 'camera-video';
-    vidElement.addEventListener('loadedmetadata', () => vidElement.play(), { once: true });
+    vidElement.addEventListener('loadedmetadata', () => vidElement.play(), {
+      once: true,
+    });
     this.element.appendChild(vidElement);
   }
 }
@@ -86,11 +88,14 @@ class CameraRTCConnection {
   constructor(track: string) {
     this.track = track;
     this.pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
     this.closed = false;
     this.pc.addEventListener('connectionstatechange', (event) => {
-      if (this.pc.connectionState == "closed" || this.pc.connectionState == "failed") {
+      if (
+        this.pc.connectionState == 'closed' ||
+        this.pc.connectionState == 'failed'
+      ) {
         if (!this.closed) {
           this.closed = true;
           this.pc.close();
@@ -121,14 +126,14 @@ class CameraRTCConnection {
       this.session = created.session;
       this.pc.addEventListener('icecandidate', (event) => {
         const candidates = event.candidate ? [event.candidate] : [];
-        this.apiRequest<any>("addicecandidates", candidates).catch((e) => {
+        this.apiRequest<any>('addicecandidates', candidates).catch((e) => {
           this.flagError(e);
         });
       });
       await this.pc.setRemoteDescription(created.offer);
       const answer = await this.pc.createAnswer();
       await this.pc.setLocalDescription(answer);
-      await this.apiRequest<any>("answer", this.pc.localDescription);
+      await this.apiRequest<any>('answer', this.pc.localDescription);
       await this.pollICE();
     } catch (e) {
       this.flagError(e);
@@ -149,7 +154,10 @@ class CameraRTCConnection {
       if (this.closed) {
         return;
       }
-      const nextResponse: ICECandidatesResponse = await this.apiRequest("icecandidates", {});
+      const nextResponse: ICECandidatesResponse = await this.apiRequest(
+        'icecandidates',
+        {},
+      );
       for (let i = seen; i < nextResponse.candidates.length; i++) {
         await this.pc.addIceCandidate(nextResponse.candidates[i]);
       }
@@ -166,13 +174,13 @@ class CameraRTCConnection {
 
   private async apiRequest<T>(apiName: string, payload: any): Promise<T> {
     try {
-      let url = "/camera/" + apiName;
+      let url = '/camera/' + apiName;
       if (this.session) {
-        url = url + "?session=" + this.session;
+        url = url + '?session=' + this.session;
       }
       const result = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const obj: APIResponse<T> = await result.json();

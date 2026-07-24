@@ -185,7 +185,7 @@ func (w *WebRTCSessions) timeoutWorker() {
 func (w *WebRTCSessions) checkTimeouts() {
 	for k, v := range w.sessions.Range {
 		v := v.(*webRTCSession)
-		if time.Since(v.LastKeepalive.Load().(time.Time)) > w.sessionTimeout {
+		if v.ShouldDelete(w.sessionTimeout) {
 			w.sessions.Delete(k)
 			v.Close()
 		}
@@ -199,7 +199,7 @@ type webRTCSession struct {
 	Track *CameraTrack
 
 	// contains time.Time
-	LastKeepalive atomic.Value
+	lastKeepalive atomic.Value
 
 	peerConn *webrtc.PeerConnection
 	sender   *webrtc.RTPSender
@@ -256,7 +256,27 @@ func (w *webRTCSession) Close() {
 }
 
 func (w *webRTCSession) Keepalive() {
-	w.LastKeepalive.Store(time.Now())
+	w.lastKeepalive.Store(time.Now())
+}
+
+func (w *webRTCSession) ShouldDelete(timeout time.Duration) bool {
+	select {
+	case <-w.Context.Done():
+		// This might happen if the RTC connection fails, and we call Close() but the
+		// owning WebRTCSessions hasn't deleted us yet.
+		return true
+	default:
+	}
+
+	state := w.peerConn.ConnectionState()
+	if state == webrtc.PeerConnectionStateConnected || state == webrtc.PeerConnectionStateDisconnected {
+		// There won't be any keepalives during a live connection or during recovery.
+		return false
+	}
+
+	// Keepalives are mostly used during initialization, where the client
+	// makes a sequence of HTTP requests and may disappear at any time.
+	return time.Since(w.lastKeepalive.Load().(time.Time)) > timeout
 }
 
 func (w *webRTCSession) LocalDescription() webrtc.SessionDescription {
@@ -313,7 +333,8 @@ func (w *webRTCSession) HandleICECandidates(candidates []webrtc.ICECandidateInit
 
 func (w *webRTCSession) handleCloseEvents() {
 	w.peerConn.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
+		switch state {
+		case webrtc.PeerConnectionStateFailed:
 			w.Close()
 		}
 	})

@@ -57,6 +57,9 @@ func NewCameraTrack(cam Camera, name string, ctx context.Context) (*CameraTrack,
 				// encoder's WriteFrame itself first, but we do this just in case.
 			}
 		}
+		if err := cam.Error(); err != nil {
+			log.Printf("error streaming images from camera %s: %s", name, err)
+		}
 	}()
 	go func() {
 		defer encoder.Cancel()
