@@ -29,10 +29,23 @@ export class CameraView {
     this.track = track;
     this.element = document.createElement('div');
     this.element.className = 'camera';
-    this.setupConnection();
+    this.connect();
+
+    window.addEventListener('pagehide', () => {
+      this.disconnect();
+    });
+    window.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.disconnect();
+      } else {
+        if (!this.conn?.isOpen()) {
+          this.connect();
+        }
+      }
+    });
   }
 
-  private setupConnection() {
+  private connect() {
     if (this.conn) {
       this.conn.close();
     }
@@ -42,6 +55,11 @@ export class CameraView {
     this.conn.onerror = (e) => this.showError(e);
     this.conn.onstream = (stream) => this.showStream(stream);
     this.conn.connect();
+  }
+
+  private disconnect() {
+    this.conn?.close();
+    this.showError('Disconnected by user event.');
   }
 
   private showLoading() {
@@ -68,7 +86,7 @@ export class CameraView {
     const errRetry = document.createElement('button');
     errRetry.className = 'camera-error-retry';
     errRetry.textContent = 'Retry';
-    errRetry.addEventListener('click', () => this.setupConnection());
+    errRetry.addEventListener('click', () => this.connect());
     errElement.appendChild(errRetry);
 
     this.element.appendChild(errElement);
@@ -133,9 +151,21 @@ class CameraRTCConnection {
     });
   }
 
+  public isOpen(): boolean {
+    return !this.closed;
+  }
+
   public close() {
-    this.closed = true;
-    this.pc.close();
+    if (!this.closed) {
+      this.closed = true;
+      this.pc.close();
+
+      if (this.session) {
+        navigator.sendBeacon(
+          `/camera/disconnect?session=${encodeURIComponent(this.session)}`,
+        );
+      }
+    }
   }
 
   public async connect() {

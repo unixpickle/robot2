@@ -5,6 +5,7 @@
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 5px;
+  justify-content: center;
 }
 
 .camera {

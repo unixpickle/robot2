@@ -51,11 +51,13 @@ func NewWebRTCSessions(tracks []*CameraTrack, sessionTimeout time.Duration) *Web
 	}
 
 	mux.HandleFunc("/connect", w.handleConnect)
+	mux.HandleFunc("/disconnect", w.handleDisconnect)
 	mux.HandleFunc("/icecandidates", w.handleICECandidates)
 	mux.HandleFunc("/addicecandidates", w.handleRemoteICECandidates)
 	mux.HandleFunc("/answer", w.handleAnswer)
+	mux.HandleFunc("/status", w.handleStatus)
 
-	go w.timeoutWorker()
+	go w.cleanupWorker()
 	return w
 }
 
@@ -86,9 +88,7 @@ func (w *WebRTCSessions) handleConnect(wr http.ResponseWriter, r *http.Request) 
 		w.serveError(wr, errNoTrackFound)
 		return
 	}
-
-	id, err := uuid.NewRandom()
-	if err != nil {
+	if err := track.LastError(); err != nil {
 		w.serveError(wr, err)
 		return
 	}
@@ -99,10 +99,18 @@ func (w *WebRTCSessions) handleConnect(wr http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	w.sessions.Store(id.String(), session)
+	w.sessions.Store(session.ID, session)
 	w.serveData(wr, map[string]any{
-		"session": id.String(),
+		"session": session.ID,
 		"offer":   session.LocalDescription(),
+	})
+}
+
+func (w *WebRTCSessions) handleDisconnect(wr http.ResponseWriter, r *http.Request) {
+	w.handleSessionAPI(wr, r, func(s *webRTCSession) (any, error) {
+		s.Close()
+		w.sessions.Delete(s.ID)
+		return true, nil
 	})
 }
 
@@ -125,6 +133,24 @@ func (w *WebRTCSessions) handleAnswer(wr http.ResponseWriter, r *http.Request) {
 			return true, nil
 		}
 	})
+}
+
+func (w *WebRTCSessions) handleStatus(wr http.ResponseWriter, r *http.Request) {
+	obj := map[string]any{}
+	for _, t := range w.tracks {
+		var cameraInfo struct {
+			Metrics   *CameraTrackMetrics `json:"metrics"`
+			LastError *string             `json:"lastError"`
+		}
+		cameraInfo.Metrics = t.Metrics()
+		if err := t.LastError(); err != nil {
+			errMsg := new(string)
+			*errMsg = err.Error()
+			cameraInfo.LastError = errMsg
+		}
+		obj[t.Name] = cameraInfo
+	}
+	w.serveData(wr, obj)
 }
 
 func (w *WebRTCSessions) handleRemoteICECandidates(wr http.ResponseWriter, r *http.Request) {
@@ -175,14 +201,14 @@ func (w *WebRTCSessions) serveData(wr http.ResponseWriter, obj any) {
 	wr.Write(encoded)
 }
 
-func (w *WebRTCSessions) timeoutWorker() {
+func (w *WebRTCSessions) cleanupWorker() {
 	for {
-		w.checkTimeouts()
+		w.deleteEndedSessions()
 		time.Sleep(time.Second * 10)
 	}
 }
 
-func (w *WebRTCSessions) checkTimeouts() {
+func (w *WebRTCSessions) deleteEndedSessions() {
 	for k, v := range w.sessions.Range {
 		v := v.(*webRTCSession)
 		if v.ShouldDelete(w.sessionTimeout) {
@@ -193,6 +219,8 @@ func (w *WebRTCSessions) checkTimeouts() {
 }
 
 type webRTCSession struct {
+	ID string
+
 	Context context.Context
 	cancel  func()
 
@@ -215,6 +243,11 @@ type webRTCSession struct {
 }
 
 func newWebRTCSession(track *CameraTrack) (*webRTCSession, error) {
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return nil, err
+	}
+
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -234,7 +267,13 @@ func newWebRTCSession(track *CameraTrack) (*webRTCSession, error) {
 		pc.Close()
 	}()
 
-	res := &webRTCSession{Context: ctx, cancel: cancel, Track: track, peerConn: pc}
+	res := &webRTCSession{
+		ID:       id.String(),
+		Context:  ctx,
+		cancel:   cancel,
+		Track:    track,
+		peerConn: pc,
+	}
 	res.Keepalive()
 
 	res.handleCloseEvents()
