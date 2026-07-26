@@ -1,4 +1,5 @@
 import { CameraView } from './camera';
+import './style/app.css';
 
 class App {
   public element: HTMLElement;

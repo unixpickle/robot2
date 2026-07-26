@@ -1,3 +1,5 @@
+import './style/camera.css';
+
 interface APIResponse<T> {
   error?: string;
   data?: T;
@@ -26,7 +28,7 @@ export class CameraView {
   constructor(track: string) {
     this.track = track;
     this.element = document.createElement('div');
-    this.element.innerHTML = '<div id="camera-loader"></div>';
+    this.element.className = 'camera';
     this.setupConnection();
   }
 
@@ -34,6 +36,7 @@ export class CameraView {
     if (this.conn) {
       this.conn.close();
     }
+    this.showLoading();
     this.conn = new CameraRTCConnection(this.track);
     this.conn.onclose = () => this.showError('connection closed');
     this.conn.onerror = (e) => this.showError(e);
@@ -41,7 +44,18 @@ export class CameraView {
     this.conn.connect();
   }
 
-  public showError(err: string) {
+  private showLoading() {
+    this.element.innerHTML = '<div class="camera-loader"></div>';
+  }
+
+  private removeLoader() {
+    const loaders = this.element.getElementsByClassName('camera-loader');
+    for (let i = 0; i < loaders.length; i++) {
+      this.element.removeChild(loaders[i]);
+    }
+  }
+
+  private showError(err: string) {
     this.element.innerHTML = '';
     const errElement = document.createElement('div');
     errElement.className = 'camera-error';
@@ -60,17 +74,24 @@ export class CameraView {
     this.element.appendChild(errElement);
   }
 
-  public showStream(stream: MediaStream) {
-    this.element.innerHTML = '';
+  private showStream(stream: MediaStream) {
+    this.showLoading();
     const vidElement = document.createElement('video');
     vidElement.autoplay = true;
     vidElement.playsInline = true; // maybe helps for mobile browsers
     vidElement.muted = true; // without this, chrome refuses to play before user interaction
     vidElement.srcObject = stream;
     vidElement.className = 'camera-video';
-    vidElement.addEventListener('loadedmetadata', () => vidElement.play(), {
-      once: true,
-    });
+    vidElement.addEventListener(
+      'loadedmetadata',
+      () => {
+        this.removeLoader();
+        vidElement.play();
+      },
+      {
+        once: true,
+      },
+    );
     this.element.appendChild(vidElement);
   }
 }

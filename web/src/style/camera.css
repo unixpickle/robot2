@@ -1,0 +1,46 @@
+@import './spin.css';
+
+.camera-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.camera {
+  position: relative;
+  width: 300px;
+  min-height: 225px;
+  background-color: #f0f0f0;
+}
+
+.camera-loader {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  top: calc(50% - 15px);
+  left: calc(50% - 15px);
+  background-size: 100% 100%;
+  background-position: center;
+  background-image: url('../images/camera_loader.png');
+  animation: spin 2s linear infinite;
+}
+
+.camera-error {
+  padding: 20px;
+}
+
+.camera-error-message {
+  display: block;
+  text-align: center;
+}
+
+.camera-error-retry {
+  display: block;
+  margin: 10px auto;
+}
+
+.camera-video {
+  display: block;
+  width: 100%;
+}
