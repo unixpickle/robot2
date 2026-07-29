@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -21,11 +21,19 @@ type CameraTrackMetrics struct {
 	TotalFrames uint64 `json:"totalFrames"`
 }
 
+type cameraTrackWaiter struct {
+	FrameCh chan<- *Frame
+	ErrCh   chan<- error
+}
+
 type CameraTrack struct {
 	Name      string
 	Track     *webrtc.TrackLocalStaticSample
 	metrics   atomic.Value // contains a *CameraTrackMetrics
 	lastError atomic.Value // contains error or nil
+
+	waitersLock sync.Mutex
+	waiters     []*cameraTrackWaiter
 }
 
 func NewCameraTrack(cam Camera, name string, ctx context.Context) (*CameraTrack, error) {
@@ -53,18 +61,18 @@ func NewCameraTrack(cam Camera, name string, ctx context.Context) (*CameraTrack,
 		return nil, err
 	}
 
-	// FIFO for frame times to match encoded output samples
-	frameTimes := make(chan time.Time, 10)
+	// FIFO for raw frames to match encoded output samples
+	frames := make(chan *Frame, 10)
 
 	result := &CameraTrack{Name: name, Track: track}
 
 	go func() {
-		defer close(frameTimes)
-		for packet := range cam.Frames() {
+		defer close(frames)
+		for frame := range cam.Frames() {
 			select {
-			case frameTimes <- packet.Time:
-				if err := encoder.WriteFrame(packet.Image); err != nil {
-					result.lastError.Store(fmt.Errorf("write camera frame: %w", err))
+			case frames <- frame:
+				if err := encoder.WriteFrame(frame.Image); err != nil {
+					result.recordError(fmt.Errorf("write camera frame: %w", err))
 					log.Printf("error writing camera frame: %s", err)
 					return
 				}
@@ -74,39 +82,100 @@ func NewCameraTrack(cam Camera, name string, ctx context.Context) (*CameraTrack,
 			}
 		}
 		if err := cam.Error(); err != nil {
-			result.lastError.Store(fmt.Errorf("error streaming images from camera: %w", err))
+			result.recordError(fmt.Errorf("error streaming images from camera: %w", err))
 			log.Printf("error streaming images from camera %s: %s", name, err)
 		}
 	}()
 	go func() {
 		defer encoder.Cancel()
-		var prevFrame []byte
-		var prevTime time.Time
+		var prevSample []byte
+		var prevFrame *Frame
 		var totalFrames uint64
 		for {
-			frame, err := encoder.ReadFrame()
+			sample, err := encoder.ReadFrame()
 			if err != nil {
 				return
 			}
-			ts := <-frameTimes
+			frame := <-frames
 			if prevFrame != nil {
-				duration := ts.Sub(prevTime)
-				if err := track.WriteSample(media.Sample{Data: prevFrame, Duration: duration}); err != nil {
+				duration := frame.Time.Sub(prevFrame.Time)
+				if err := track.WriteSample(media.Sample{Data: prevSample, Duration: duration}); err != nil {
 					return
 				}
+
+				result.signalFrame(frame)
+
 				totalFrames += 1
 				result.metrics.Store(&CameraTrackMetrics{
 					LastFPS:        1e9 / float64(duration.Nanoseconds()),
-					LastUpdateTime: prevTime.UnixMilli(),
+					LastUpdateTime: prevFrame.Time.UnixMilli(),
 					TotalFrames:    totalFrames,
 				})
 			}
-			prevTime = ts
 			prevFrame = frame
+			prevSample = sample
 		}
 	}()
 
 	return result, nil
+}
+
+func (c *CameraTrack) recordError(err error) {
+	// Store the error before notifying the waiters to avoid a race
+	// where a waiter doesn't see the error at first but also doesn't
+	// get notified when the error comes in.
+	c.lastError.Store(err)
+
+	c.waitersLock.Lock()
+	defer c.waitersLock.Unlock()
+	for _, w := range c.waiters {
+		w.ErrCh <- err
+	}
+	c.waiters = nil
+}
+
+func (c *CameraTrack) signalFrame(frame *Frame) {
+	c.waitersLock.Lock()
+	defer c.waitersLock.Unlock()
+	for _, w := range c.waiters {
+		w.FrameCh <- frame
+	}
+	c.waiters = nil
+}
+
+// Wait polls for the next frame and returns it, or an error if the
+// context completes or the camera fails.
+func (c *CameraTrack) Wait(ctx context.Context) (*Frame, error) {
+	errCh := make(chan error, 1)
+	frameCh := make(chan *Frame, 1)
+	w := &cameraTrackWaiter{FrameCh: frameCh, ErrCh: errCh}
+	c.waitersLock.Lock()
+	// Check for error after acquiring lock to match the order
+	// in recordError.
+	if err := c.LastError(); err != nil {
+		c.waitersLock.Unlock()
+		return nil, err
+	}
+	c.waiters = append(c.waiters, w)
+	c.waitersLock.Unlock()
+
+	select {
+	case <-ctx.Done():
+		c.waitersLock.Lock()
+		defer c.waitersLock.Unlock()
+		for i, x := range c.waiters {
+			if x == w {
+				c.waiters[i] = c.waiters[len(c.waiters)-1]
+				c.waiters = c.waiters[:len(c.waiters)-1]
+				break
+			}
+		}
+		return nil, ctx.Err()
+	case err := <-errCh:
+		return nil, err
+	case frame := <-frameCh:
+		return frame, nil
+	}
 }
 
 func (c *CameraTrack) Metrics() *CameraTrackMetrics {

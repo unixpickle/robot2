@@ -12,7 +12,7 @@ import (
 )
 
 type Server struct {
-	RTC *camera.WebRTCSessions
+	Camera *camera.CameraController
 }
 
 func main() {
@@ -51,7 +51,7 @@ func main() {
 		}
 		tracks = append(tracks, track)
 	}
-	sessions := camera.NewWebRTCSessions(tracks, rtcTimeout)
+	sessions := camera.NewCameraController(tracks, rtcTimeout)
 	http.Handle("/camera/", http.StripPrefix("/camera", sessions))
 	http.Handle("/", http.FileServer(http.Dir(webDir)))
 

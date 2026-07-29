@@ -214,7 +214,7 @@ class CameraRTCConnection {
       }
       seen = nextResponse.candidates.length;
       if (nextResponse.done) {
-        this.pc.addIceCandidate(null);
+        this.pc.addIceCandidate();
         return;
       }
 

@@ -1,9 +1,12 @@
 package camera
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"image/jpeg"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -25,11 +28,11 @@ func (w *WebError) Error() string {
 var (
 	errNoSession       = &WebError{Code: http.StatusBadRequest, Message: "no RTC session found"}
 	errMissingTrack    = &WebError{Code: http.StatusBadRequest, Message: "no track specified"}
-	errNoTrackFound    = &WebError{Code: http.StatusBadRequest, Message: "unknown track"}
+	errTrackNotFound   = &WebError{Code: http.StatusBadRequest, Message: "unknown track"}
 	errAlreadyAnswered = &WebError{Code: http.StatusBadRequest, Message: "answer already received for this session"}
 )
 
-type WebRTCSessions struct {
+type CameraController struct {
 	sessionTimeout time.Duration
 	tracks         []*CameraTrack
 
@@ -39,10 +42,10 @@ type WebRTCSessions struct {
 	mux *http.ServeMux
 }
 
-func NewWebRTCSessions(tracks []*CameraTrack, sessionTimeout time.Duration) *WebRTCSessions {
+func NewCameraController(tracks []*CameraTrack, sessionTimeout time.Duration) *CameraController {
 	mux := http.NewServeMux()
 
-	w := &WebRTCSessions{
+	w := &CameraController{
 		sessionTimeout: sessionTimeout,
 		tracks:         tracks,
 
@@ -56,39 +59,49 @@ func NewWebRTCSessions(tracks []*CameraTrack, sessionTimeout time.Duration) *Web
 	mux.HandleFunc("/addicecandidates", w.handleRemoteICECandidates)
 	mux.HandleFunc("/answer", w.handleAnswer)
 	mux.HandleFunc("/status", w.handleStatus)
+	mux.HandleFunc("/snapshot", w.handleSnapshot)
 
 	go w.cleanupWorker()
 	return w
 }
 
-func (w *WebRTCSessions) ServeHTTP(wr http.ResponseWriter, r *http.Request) {
+func (w *CameraController) ServeHTTP(wr http.ResponseWriter, r *http.Request) {
 	w.mux.ServeHTTP(wr, r)
 }
 
-func (w *WebRTCSessions) handleConnect(wr http.ResponseWriter, r *http.Request) {
-	var payload struct {
-		Track string `json:"track"`
+func (w *CameraController) trackFromRequest(r *http.Request) (*CameraTrack, error) {
+	trackID := r.FormValue("track")
+	if trackID == "" {
+		var payload struct {
+			Track string `json:"track"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			return nil, &WebError{Code: http.StatusBadRequest, Message: err.Error()}
+		}
+		trackID = payload.Track
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		w.serveError(wr, &WebError{Code: http.StatusBadRequest, Message: err.Error()})
-		return
-	}
-	if payload.Track == "" {
-		w.serveError(wr, errMissingTrack)
-		return
+	if trackID == "" {
+		return nil, errMissingTrack
 	}
 	var track *CameraTrack
 	for _, t := range w.tracks {
-		if t.Name == payload.Track {
+		if t.Name == trackID {
 			track = t
 			break
 		}
 	}
 	if track == nil {
-		w.serveError(wr, errNoTrackFound)
-		return
+		return nil, errTrackNotFound
 	}
 	if err := track.LastError(); err != nil {
+		return nil, fmt.Errorf("track is inaccessible due to error: %w", err)
+	}
+	return track, nil
+}
+
+func (w *CameraController) handleConnect(wr http.ResponseWriter, r *http.Request) {
+	track, err := w.trackFromRequest(r)
+	if err != nil {
 		w.serveError(wr, err)
 		return
 	}
@@ -106,7 +119,7 @@ func (w *WebRTCSessions) handleConnect(wr http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func (w *WebRTCSessions) handleDisconnect(wr http.ResponseWriter, r *http.Request) {
+func (w *CameraController) handleDisconnect(wr http.ResponseWriter, r *http.Request) {
 	w.handleSessionAPI(wr, r, func(s *webRTCSession) (any, error) {
 		s.Close()
 		w.sessions.Delete(s.ID)
@@ -114,14 +127,14 @@ func (w *WebRTCSessions) handleDisconnect(wr http.ResponseWriter, r *http.Reques
 	})
 }
 
-func (w *WebRTCSessions) handleICECandidates(wr http.ResponseWriter, r *http.Request) {
+func (w *CameraController) handleICECandidates(wr http.ResponseWriter, r *http.Request) {
 	w.handleSessionAPI(wr, r, func(s *webRTCSession) (any, error) {
 		cands, done := s.ICECandidates()
 		return map[string]any{"candidates": cands, "done": done}, nil
 	})
 }
 
-func (w *WebRTCSessions) handleAnswer(wr http.ResponseWriter, r *http.Request) {
+func (w *CameraController) handleAnswer(wr http.ResponseWriter, r *http.Request) {
 	w.handleSessionAPI(wr, r, func(s *webRTCSession) (any, error) {
 		var answer webrtc.SessionDescription
 		if err := json.NewDecoder(r.Body).Decode(&answer); err != nil {
@@ -135,7 +148,7 @@ func (w *WebRTCSessions) handleAnswer(wr http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (w *WebRTCSessions) handleStatus(wr http.ResponseWriter, r *http.Request) {
+func (w *CameraController) handleStatus(wr http.ResponseWriter, r *http.Request) {
 	obj := map[string]any{}
 	for _, t := range w.tracks {
 		var cameraInfo struct {
@@ -153,7 +166,27 @@ func (w *WebRTCSessions) handleStatus(wr http.ResponseWriter, r *http.Request) {
 	w.serveData(wr, obj)
 }
 
-func (w *WebRTCSessions) handleRemoteICECandidates(wr http.ResponseWriter, r *http.Request) {
+func (w *CameraController) handleSnapshot(wr http.ResponseWriter, r *http.Request) {
+	track, err := w.trackFromRequest(r)
+	if err != nil {
+		w.serveError(wr, err)
+		return
+	}
+	frame, err := track.Wait(r.Context())
+	if err != nil {
+		w.serveError(wr, err)
+		return
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, frame.Image, nil); err != nil {
+		w.serveError(wr, err)
+		return
+	}
+	wr.Header().Set("content-type", "image/jpeg")
+	wr.Write(buf.Bytes())
+}
+
+func (w *CameraController) handleRemoteICECandidates(wr http.ResponseWriter, r *http.Request) {
 	w.handleSessionAPI(wr, r, func(s *webRTCSession) (any, error) {
 		var candidates []webrtc.ICECandidateInit
 		if err := json.NewDecoder(r.Body).Decode(&candidates); err != nil {
@@ -163,7 +196,7 @@ func (w *WebRTCSessions) handleRemoteICECandidates(wr http.ResponseWriter, r *ht
 	})
 }
 
-func (w *WebRTCSessions) handleSessionAPI(
+func (w *CameraController) handleSessionAPI(
 	wr http.ResponseWriter,
 	r *http.Request,
 	f func(s *webRTCSession) (any, error),
@@ -184,7 +217,7 @@ func (w *WebRTCSessions) handleSessionAPI(
 	}
 }
 
-func (w *WebRTCSessions) serveError(wr http.ResponseWriter, err error) {
+func (w *CameraController) serveError(wr http.ResponseWriter, err error) {
 	wr.Header().Set("content-type", "application/json")
 	if err, ok := errors.AsType[*WebError](err); ok {
 		wr.WriteHeader(err.Code)
@@ -195,20 +228,20 @@ func (w *WebRTCSessions) serveError(wr http.ResponseWriter, err error) {
 	wr.Write(encoded)
 }
 
-func (w *WebRTCSessions) serveData(wr http.ResponseWriter, obj any) {
+func (w *CameraController) serveData(wr http.ResponseWriter, obj any) {
 	wr.Header().Set("content-type", "application/json")
 	encoded, _ := json.Marshal(map[string]any{"data": obj})
 	wr.Write(encoded)
 }
 
-func (w *WebRTCSessions) cleanupWorker() {
+func (w *CameraController) cleanupWorker() {
 	for {
 		w.deleteEndedSessions()
 		time.Sleep(time.Second * 10)
 	}
 }
 
-func (w *WebRTCSessions) deleteEndedSessions() {
+func (w *CameraController) deleteEndedSessions() {
 	for k, v := range w.sessions.Range {
 		v := v.(*webRTCSession)
 		if v.ShouldDelete(w.sessionTimeout) {
@@ -302,7 +335,7 @@ func (w *webRTCSession) ShouldDelete(timeout time.Duration) bool {
 	select {
 	case <-w.Context.Done():
 		// This might happen if the RTC connection fails, and we call Close() but the
-		// owning WebRTCSessions hasn't deleted us yet.
+		// owning CameraController hasn't deleted us yet.
 		return true
 	default:
 	}

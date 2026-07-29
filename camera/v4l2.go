@@ -127,6 +127,7 @@ func NewV4L2Camera(path string) (*V4L2Camera, error) {
 				continue
 			}
 			img, err := jpeg.Decode(bytes.NewReader(frame))
+			wc.ReleaseFrame(idx)
 			if err != nil {
 				successiveErrors += 1
 				if successiveErrors == maxSuccessiveJPEGErrors {
@@ -136,7 +137,6 @@ func NewV4L2Camera(path string) (*V4L2Camera, error) {
 				continue
 			}
 			successiveErrors = 0
-			wc.ReleaseFrame(idx)
 			select {
 			case ch <- &Frame{Image: img, Time: t}:
 			case <-cancel:
