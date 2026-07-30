@@ -14,22 +14,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pion/webrtc/v4"
+	"github.com/unixpickle/robot2/apiutil"
 )
 
-type WebError struct {
-	Code    int
-	Message string
-}
-
-func (w *WebError) Error() string {
-	return w.Message
-}
-
 var (
-	errNoSession       = &WebError{Code: http.StatusBadRequest, Message: "no RTC session found"}
-	errMissingTrack    = &WebError{Code: http.StatusBadRequest, Message: "no track specified"}
-	errTrackNotFound   = &WebError{Code: http.StatusBadRequest, Message: "unknown track"}
-	errAlreadyAnswered = &WebError{Code: http.StatusBadRequest, Message: "answer already received for this session"}
+	errNoSession       = &apiutil.WebError{Code: http.StatusBadRequest, Message: "no RTC session found"}
+	errMissingTrack    = &apiutil.WebError{Code: http.StatusBadRequest, Message: "no track specified"}
+	errTrackNotFound   = &apiutil.WebError{Code: http.StatusBadRequest, Message: "unknown track"}
+	errAlreadyAnswered = &apiutil.WebError{Code: http.StatusBadRequest, Message: "answer already received for this session"}
 )
 
 type CameraController struct {
@@ -76,7 +68,7 @@ func (w *CameraController) trackFromRequest(r *http.Request) (*CameraTrack, erro
 			Track string `json:"track"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			return nil, &WebError{Code: http.StatusBadRequest, Message: err.Error()}
+			return nil, &apiutil.WebError{Code: http.StatusBadRequest, Message: err.Error()}
 		}
 		trackID = payload.Track
 	}
@@ -102,18 +94,18 @@ func (w *CameraController) trackFromRequest(r *http.Request) (*CameraTrack, erro
 func (w *CameraController) handleConnect(wr http.ResponseWriter, r *http.Request) {
 	track, err := w.trackFromRequest(r)
 	if err != nil {
-		w.serveError(wr, err)
+		apiutil.ServeError(wr, err)
 		return
 	}
 
 	session, err := newWebRTCSession(track)
 	if err != nil {
-		w.serveError(wr, err)
+		apiutil.ServeError(wr, err)
 		return
 	}
 
 	w.sessions.Store(session.ID, session)
-	w.serveData(wr, map[string]any{
+	apiutil.ServeData(wr, map[string]any{
 		"session": session.ID,
 		"offer":   session.LocalDescription(),
 	})
@@ -163,23 +155,23 @@ func (w *CameraController) handleStatus(wr http.ResponseWriter, r *http.Request)
 		}
 		obj[t.Name] = cameraInfo
 	}
-	w.serveData(wr, obj)
+	apiutil.ServeData(wr, obj)
 }
 
 func (w *CameraController) handleSnapshot(wr http.ResponseWriter, r *http.Request) {
 	track, err := w.trackFromRequest(r)
 	if err != nil {
-		w.serveError(wr, err)
+		apiutil.ServeError(wr, err)
 		return
 	}
 	frame, err := track.Wait(r.Context())
 	if err != nil {
-		w.serveError(wr, err)
+		apiutil.ServeError(wr, err)
 		return
 	}
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, frame.Image, nil); err != nil {
-		w.serveError(wr, err)
+		apiutil.ServeError(wr, err)
 		return
 	}
 	wr.Header().Set("content-type", "image/jpeg")
@@ -204,22 +196,22 @@ func (w *CameraController) handleSessionAPI(
 	id := r.FormValue("session")
 	sess, ok := w.sessions.Load(id)
 	if !ok {
-		w.serveError(wr, errNoSession)
+		apiutil.ServeError(wr, errNoSession)
 		return
 	}
 	s := sess.(*webRTCSession)
 	s.Keepalive()
 	obj, err := f(s)
 	if err != nil {
-		w.serveError(wr, err)
+		apiutil.ServeError(wr, err)
 	} else {
-		w.serveData(wr, obj)
+		apiutil.ServeData(wr, obj)
 	}
 }
 
 func (w *CameraController) serveError(wr http.ResponseWriter, err error) {
 	wr.Header().Set("content-type", "application/json")
-	if err, ok := errors.AsType[*WebError](err); ok {
+	if err, ok := errors.AsType[*apiutil.WebError](err); ok {
 		wr.WriteHeader(err.Code)
 	} else {
 		wr.WriteHeader(http.StatusInternalServerError)

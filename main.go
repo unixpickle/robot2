@@ -38,12 +38,12 @@ func main() {
 	flag.Parse()
 
 	log.Println("connecting to motors...")
-	motors, err := motors.NewConnection(motorPort, motorTimeout)
+	motorConn, err := motors.NewConnection(motorPort, motorTimeout)
 	if err != nil {
 		log.Fatalln("failed to connect to motors:", err)
 	}
 	log.Println("getting motor statuses...")
-	statuses, err := motors.MotorStatuses(6)
+	statuses, err := motorConn.MotorStatuses(6)
 	if err != nil {
 		log.Fatalln("failed to get motor statuses:", err)
 	}
@@ -70,8 +70,13 @@ func main() {
 		}
 		tracks = append(tracks, track)
 	}
-	sessions := camera.NewCameraController(tracks, rtcTimeout)
-	http.Handle("/camera/", http.StripPrefix("/camera", sessions))
+	camController := camera.NewCameraController(tracks, rtcTimeout)
+	motorController, err := motors.NewMotorController(motorConn)
+	if err != nil {
+		log.Fatalf("failed to create motor controller: %s", err)
+	}
+	http.Handle("/camera/", http.StripPrefix("/camera", camController))
+	http.Handle("/motor/", http.StripPrefix("/motor", motorController))
 	http.Handle("/", http.FileServer(http.Dir(webDir)))
 
 	log.Printf("attempting to listen at %s...", addr)
