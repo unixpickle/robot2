@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/unixpickle/robot2/camera"
+	"github.com/unixpickle/robot2/motors"
 )
 
 type Server struct {
@@ -20,6 +21,8 @@ func main() {
 	var rtcTimeout time.Duration
 	var webDir string
 	var addr string
+	var motorPort string
+	var motorTimeout time.Duration
 
 	flag.StringVar(
 		&cameras,
@@ -30,7 +33,23 @@ func main() {
 	flag.DurationVar(&rtcTimeout, "rtc-timeout", time.Minute, "RTC session timeout")
 	flag.StringVar(&webDir, "web-dir", "web/dist", "static asset directory")
 	flag.StringVar(&addr, "addr", ":1337", "address to listen on")
+	flag.StringVar(&motorPort, "motor-port", "/dev/ttyACM0", "path to motorbus serial port")
+	flag.DurationVar(&motorTimeout, "motor-timeout", time.Second*2, "motor serial read timeout")
 	flag.Parse()
+
+	log.Println("connecting to motors...")
+	motors, err := motors.NewConnection(motorPort, motorTimeout)
+	if err != nil {
+		log.Fatalln("failed to connect to motors:", err)
+	}
+	log.Println("getting motor statuses...")
+	statuses, err := motors.MotorStatuses(6)
+	if err != nil {
+		log.Fatalln("failed to get motor statuses:", err)
+	}
+	for i, status := range statuses {
+		log.Printf("motor %d initial status: %s", i, status)
+	}
 
 	log.Println("opening cameras...")
 	var tracks []*camera.CameraTrack
