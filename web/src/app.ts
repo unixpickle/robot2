@@ -1,4 +1,5 @@
 import { CameraView } from './camera';
+import { MotorController } from './motor';
 import './style/app.css';
 
 class App {
@@ -6,6 +7,7 @@ class App {
   public camContainer: HTMLElement;
   public topCam: CameraView;
   public bottomCam: CameraView;
+  public motorController: MotorController;
 
   constructor() {
     this.element = document.getElementById('container') as HTMLElement;
@@ -16,6 +18,9 @@ class App {
     this.bottomCam = new CameraView('bottom');
     this.camContainer.appendChild(this.topCam.element);
     this.camContainer.appendChild(this.bottomCam.element);
+
+    this.motorController = new MotorController();
+    this.element.appendChild(this.motorController.element);
   }
 }
 

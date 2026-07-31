@@ -1,6 +1,9 @@
 package motors
 
-import "fmt"
+import (
+	"fmt"
+	"reflect"
+)
 
 type StatusFlags uint8
 
@@ -13,40 +16,40 @@ const (
 )
 
 type MotorStatus struct {
-	ID         uint8
-	ErrorFlags ErrorFlags
+	ID         uint8      `json:"id"`
+	ErrorFlags ErrorFlags `json:"errorFlags"`
 
-	Position    int16
-	Speed       int16
-	Load        int16
-	RawVoltage  uint8
-	Temperature uint8
-	AsyncFlag   uint8
-	Status      uint8
-	Moving      uint8
-	RawCurrent  uint16
+	Position    int16  `json:"position"`
+	Speed       int16  `json:"speed"`
+	Load        int16  `json:"load"`
+	rawVoltage  uint8  `json:"-"`
+	Temperature uint8  `json:"temperature"`
+	AsyncFlag   uint8  `json:"asyncFlag"`
+	Status      uint8  `json:"status"`
+	Moving      uint8  `json:"moving"`
+	rawCurrent  uint16 `json:"-"`
 
 	// Voltage is measured in volts.
-	Voltage float64
+	Voltage float64 `json:"voltage"`
 
 	// Current is measured in mA.
-	Current float64
+	Current float64 `json:"current"`
 }
 
 func decodeMotorStatus(packet []byte) (*MotorStatus, error) {
 	resp := &MotorStatus{}
-	var ignore uint8
+	var ignore uint16
 	if err := decodeResponse(packet, &resp.ID, &resp.ErrorFlags, []any{
 		&resp.Position,
 		&resp.Speed,
 		&resp.Load,
-		&resp.RawVoltage,
+		&resp.rawVoltage,
 		&resp.Temperature,
 		&resp.AsyncFlag,
 		&resp.Status,
 		&resp.Moving,
 		&ignore,
-		&resp.RawCurrent,
+		&resp.rawCurrent,
 	}); err != nil {
 		return nil, err
 	}
@@ -57,8 +60,8 @@ func decodeMotorStatus(packet []byte) (*MotorStatus, error) {
 		resp.Load = -resp.Load
 	}
 
-	resp.Voltage = float64(resp.RawVoltage) / 10.0
-	resp.Current = float64(resp.RawCurrent) * 6.5
+	resp.Voltage = float64(resp.rawVoltage) / 10.0
+	resp.Current = float64(resp.rawCurrent) * 6.5
 
 	return resp, nil
 }
@@ -74,6 +77,11 @@ func (m *MotorStatus) String() string {
 		m.Voltage,
 		m.Current,
 	)
+}
+
+// Equal checks if all of the fields match between m and m1.
+func (m *MotorStatus) Equal(m1 *MotorStatus) bool {
+	return reflect.DeepEqual(m, m1)
 }
 
 // IsOverloaded checks if the status includes the overload protection flag.

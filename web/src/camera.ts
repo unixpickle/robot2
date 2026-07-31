@@ -15,9 +15,9 @@ interface ICECandidatesResponse {
   done: boolean;
 }
 
-export type OnStream = (stream: MediaStream) => void;
-export type OnClose = () => void;
-export type OnError = (error: string) => void;
+type OnStream = (stream: MediaStream) => void;
+type OnClose = () => void;
+type OnError = (error: string) => void;
 
 export class CameraView {
   public element: HTMLElement;
@@ -240,7 +240,7 @@ class CameraRTCConnection {
       }
       return obj.data as T;
     } catch (e) {
-      throw 'webrtc api ' + apiName + ' failed with error: ' + e;
+      throw 'camera api ' + apiName + ' failed with error: ' + e;
     }
   }
 }

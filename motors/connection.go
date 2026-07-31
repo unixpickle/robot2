@@ -52,7 +52,7 @@ func (c *Connection) sendAndReceive(packet []byte) ([]byte, error) {
 }
 
 func (c *Connection) MotorStatus(id uint8) (*MotorStatus, error) {
-	request := encodeInstruction(id, instructionReadData, []any{uint8(56), uint8(14)})
+	request := encodeInstruction(id, instructionReadData, []any{uint8(56), uint8(15)})
 	response, err := c.sendAndReceive(request)
 	if err != nil {
 		return nil, err
@@ -82,18 +82,25 @@ func (c *Connection) SetOverloadProtection(id, threshold uint8, delay time.Durat
 	if err := c.write(id, 34, reduction, delayUnit, threshold); err != nil {
 		return fmt.Errorf("set overload protection: %w", err)
 	}
+
+	// Set the overload protection flag
+	var flags uint8
+	if err := c.read(id, 19, &flags); err != nil {
+		return fmt.Errorf("get overload flags: %w", err)
+	}
+	if (flags & (1 << 5)) == 0 {
+		flags |= 1 << 5
+		if err := c.write(id, 19, flags); err != nil {
+			return fmt.Errorf("set overload flags: %w", err)
+		}
+	}
 	return nil
 }
 
 // TorqueEnabled enables or disables torque for a motor.
 func (c *Connection) TorqueEnabled(id uint8) (bool, error) {
-	request := encodeInstruction(id, instructionReadData, []any{uint8(40), uint8(1)})
-	response, err := c.sendAndReceive(request)
-	if err != nil {
-		return false, fmt.Errorf("get torque enabled: %w", err)
-	}
 	var flag uint8
-	if err := decodeResponse(response, nil, nil, []any{&flag}); err != nil {
+	if err := c.read(id, 40, &flag); err != nil {
 		return false, fmt.Errorf("get torque enabled: %w", err)
 	}
 	return flag != 0, nil
@@ -109,6 +116,15 @@ func (c *Connection) SetTorqueEnabled(id uint8, enabled bool) error {
 		return fmt.Errorf("set torque enabled: %w", err)
 	}
 	return nil
+}
+
+// PositionTarget gets the current target position, e.g. one set with SetPosition().
+func (c *Connection) PositionTarget(id uint8) (uint16, error) {
+	var pos uint16
+	if err := c.read(id, 42, &pos); err != nil {
+		return 0, fmt.Errorf("get position target: %w", err)
+	}
+	return pos, nil
 }
 
 // SetPosition moves the motor to a position with a possible speed and
@@ -127,34 +143,48 @@ func (c *Connection) SetPosition(id uint8, position, speed uint16, acceleration 
 
 // PositionLimit gets the min/max position configured on the motor.
 func (c *Connection) PositionLimit(id uint8) (min, max uint16, err error) {
-	request := encodeInstruction(
-		id,
-		instructionReadData,
-		[]any{uint8(9), uint8(4)},
-	)
-
-	response, err := c.sendAndReceive(request)
-	if err != nil {
-		return 0, 0, err
+	if err := c.read(id, 9, &min, &max); err != nil {
+		return 0, 0, fmt.Errorf("get position limit: %w", err)
 	}
-
-	if err := decodeResponse(
-		response,
-		nil,
-		nil,
-		[]any{&min, &max},
-	); err != nil {
-		return 0, 0, err
-	}
-
-	return min, max, nil
+	return
 }
 
+// SetPositionLimit adjusts the position limit for the motor.
 func (c *Connection) SetPositionLimit(id uint8, min, max uint16) error {
 	if err := c.write(id, 9, min, max); err != nil {
 		return fmt.Errorf("set position limit: %w", err)
 	}
 	return nil
+}
+
+// CenterPosition calibrates the motor's current position as 2048.
+func (c *Connection) CenterPosition(id uint8) error {
+	// This is a special value of the torque enabled register that
+	// does the centering calibration behavior.
+	if err := c.write(id, 40, 128); err != nil {
+		return fmt.Errorf("center position: %w", err)
+	}
+	return nil
+}
+
+func (c *Connection) read(id uint8, addr uint8, data ...any) error {
+	var totalSize uint8
+	for _, x := range data {
+		switch x := x.(type) {
+		case *uint8:
+			totalSize += 1
+		case *uint16, *int16:
+			totalSize += 2
+		default:
+			panic(fmt.Sprintf("unknown type for read output: %T", x))
+		}
+	}
+	request := encodeInstruction(id, instructionReadData, []any{addr, totalSize})
+	response, err := c.sendAndReceive(request)
+	if err != nil {
+		return err
+	}
+	return decodeResponse(response, nil, nil, data)
 }
 
 func (c *Connection) write(id uint8, addr uint8, data ...any) error {
