@@ -40,7 +40,7 @@ func (s *statusListener) Send(x map[string]*AnnotatedStatus) {
 	}
 }
 
-type motorLimit struct {
+type MotorLimit struct {
 	Min uint16 `json:"min"`
 	Max uint16 `json:"max"`
 }
@@ -49,7 +49,7 @@ type AnnotatedStatus struct {
 	MotorStatus
 
 	RelativePos       float64    `json:"relativePos"`
-	PositionLimit     motorLimit `json:"positionLimit"`
+	PositionLimit     MotorLimit `json:"positionLimit"`
 	TargetPos         uint16     `json:"targetPos"`
 	TargetRelativePos float64    `json:"targetRelativePos"`
 }
@@ -58,7 +58,7 @@ type MotorController struct {
 	conn *Connection
 	mux  *http.ServeMux
 
-	limits  atomic.Value // contains a map[string]motorLimit
+	limits  atomic.Value // contains a map[string]MotorLimit
 	targets *sync.Map    // maps uint8 to uint16
 
 	listenersLock sync.RWMutex
@@ -68,7 +68,7 @@ type MotorController struct {
 func NewMotorController(conn *Connection) (*MotorController, error) {
 	mux := http.NewServeMux()
 
-	limits := map[string]motorLimit{}
+	limits := map[string]MotorLimit{}
 	targets := new(sync.Map)
 	for name, id := range motorIDs {
 		if err := conn.SetOverloadProtection(id, 50, time.Second*2, 20); err != nil {
@@ -77,7 +77,7 @@ func NewMotorController(conn *Connection) (*MotorController, error) {
 		if min, max, err := conn.PositionLimit(id); err != nil {
 			return nil, err
 		} else {
-			limits[name] = motorLimit{Min: min, Max: max}
+			limits[name] = MotorLimit{Min: min, Max: max}
 		}
 		if target, err := conn.PositionTarget(id); err != nil {
 			return nil, err
@@ -122,11 +122,11 @@ func (m *MotorController) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MotorController) handleLimits(w http.ResponseWriter, r *http.Request) {
-	apiutil.ServeData(w, m.limits.Load().(map[string]motorLimit))
+	apiutil.ServeData(w, m.limits.Load().(map[string]MotorLimit))
 }
 
 func (m *MotorController) handleSetLimits(w http.ResponseWriter, r *http.Request) {
-	var results map[string]motorLimit
+	var results map[string]MotorLimit
 	if err := json.NewDecoder(r.Body).Decode(&results); err != nil {
 		apiutil.ServeError(w, err)
 		return
@@ -203,7 +203,7 @@ func (m *MotorController) handleMove(w http.ResponseWriter, r *http.Request) {
 			)
 			return
 		}
-		limit := m.limits.Load().(map[string]motorLimit)[motorName]
+		limit := m.limits.Load().(map[string]MotorLimit)[motorName]
 		pos = limit.Min + uint16(math.Round(relPosValue*float64(limit.Max-limit.Min)))
 	}
 
@@ -256,8 +256,8 @@ func (m *MotorController) motorIDFromRequest(r *http.Request) (uint8, string, er
 }
 
 func (m *MotorController) annotatedStatus(status *MotorStatus) *AnnotatedStatus {
-	limits := m.limits.Load().(map[string]motorLimit)
-	var limit motorLimit
+	limits := m.limits.Load().(map[string]MotorLimit)
+	var limit MotorLimit
 	for name, id := range motorIDs {
 		if id == status.ID {
 			limit = limits[name]

@@ -151,7 +151,15 @@ func (c *Connection) PositionLimit(id uint8) (min, max uint16, err error) {
 
 // SetPositionLimit adjusts the position limit for the motor.
 func (c *Connection) SetPositionLimit(id uint8, min, max uint16) error {
+	// Turn off EEPROM lock
+	if err := c.write(id, 55, uint8(0)); err != nil {
+		return fmt.Errorf("set position limit: %w", err)
+	}
 	if err := c.write(id, 9, min, max); err != nil {
+		return fmt.Errorf("set position limit: %w", err)
+	}
+	// Re-enable EEPROM lock
+	if err := c.write(id, 55, uint8(1)); err != nil {
 		return fmt.Errorf("set position limit: %w", err)
 	}
 	return nil
@@ -161,7 +169,7 @@ func (c *Connection) SetPositionLimit(id uint8, min, max uint16) error {
 func (c *Connection) CenterPosition(id uint8) error {
 	// This is a special value of the torque enabled register that
 	// does the centering calibration behavior.
-	if err := c.write(id, 40, 128); err != nil {
+	if err := c.write(id, 40, uint8(128)); err != nil {
 		return fmt.Errorf("center position: %w", err)
 	}
 	return nil
