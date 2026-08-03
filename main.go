@@ -33,7 +33,7 @@ func main() {
 	flag.DurationVar(&rtcTimeout, "rtc-timeout", time.Minute, "RTC session timeout")
 	flag.StringVar(&webDir, "web-dir", "web/dist", "static asset directory")
 	flag.StringVar(&addr, "addr", ":1337", "address to listen on")
-	flag.StringVar(&motorPort, "motor-port", "/dev/ttyACM0", "path to motorbus serial port")
+	flag.StringVar(&motorPort, "motor-port", "", "path to motorbus serial port")
 	flag.DurationVar(&motorTimeout, "motor-timeout", time.Second*2, "motor serial read timeout")
 	flag.Parse()
 

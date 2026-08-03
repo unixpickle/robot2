@@ -16,7 +16,17 @@ type Connection struct {
 	txLock      sync.Mutex
 }
 
+// NewConnection connects to a USB serial motor controller.
+//
+// If path is empty, then the path will be detected automatically.
 func NewConnection(path string, readTimeout time.Duration) (*Connection, error) {
+	if path == "" {
+		var err error
+		path, err = DiscoverMotorBusPath()
+		if err != nil {
+			return nil, err
+		}
+	}
 	mode := &serial.Mode{
 		BaudRate: baudRate,
 		DataBits: 8,
@@ -151,18 +161,7 @@ func (c *Connection) PositionLimit(id uint8) (min, max uint16, err error) {
 
 // SetPositionLimit adjusts the position limit for the motor.
 func (c *Connection) SetPositionLimit(id uint8, min, max uint16) error {
-	// Turn off EEPROM lock
-	if err := c.write(id, 55, uint8(0)); err != nil {
-		return fmt.Errorf("set position limit: %w", err)
-	}
-	if err := c.write(id, 9, min, max); err != nil {
-		return fmt.Errorf("set position limit: %w", err)
-	}
-	// Re-enable EEPROM lock
-	if err := c.write(id, 55, uint8(1)); err != nil {
-		return fmt.Errorf("set position limit: %w", err)
-	}
-	return nil
+	return c.writeEEPROM(id, 9, min, max)
 }
 
 // CenterPosition calibrates the motor's current position as 2048.
@@ -171,6 +170,24 @@ func (c *Connection) CenterPosition(id uint8) error {
 	// does the centering calibration behavior.
 	if err := c.write(id, 40, uint8(128)); err != nil {
 		return fmt.Errorf("center position: %w", err)
+	}
+	return nil
+}
+
+// SetID changes the ID of the given motor.
+func (c *Connection) SetID(id, newID uint8) error {
+	return c.writeEEPROM(id, 5, newID)
+}
+
+func (c *Connection) writeEEPROM(id uint8, addr uint8, data ...any) error {
+	if err := c.write(id, 55, uint8(0)); err != nil {
+		return fmt.Errorf("failed to unlock EEPROM: %w", err)
+	}
+	if err := c.write(id, addr, data...); err != nil {
+		return fmt.Errorf("failed to write to address %d: %w", addr, err)
+	}
+	if err := c.write(id, 55, uint8(1)); err != nil {
+		return fmt.Errorf("failed to lock EEPROM: %w", err)
 	}
 	return nil
 }
