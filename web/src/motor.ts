@@ -85,30 +85,42 @@ export class MotorController {
 
 class SingleMotorView {
   public element: HTMLElement;
+  public currentLabel: HTMLLabelElement;
+  public loadLabel: HTMLLabelElement;
   public onChangeTarget: OnChangeTarget = async (_) => null;
-  private slider: HTMLInputElement;
-  private currentContainer: HTMLElement;
-  private currentValue: HTMLElement;
+  private targetSlider: Slider;
+  private stateSlider: Slider;
   private lastUserChange: number = -Infinity;
 
+  // Used to prevent overloading the server with small changes
   private moveRequestInFlight = false;
 
   constructor(name: string) {
     this.element = document.createElement('div');
     this.element.className = 'motor-single';
 
-    const nameLabel = document.createElement('label');
-    nameLabel.className = 'motor-name';
-    nameLabel.textContent = name;
-    this.element.appendChild(nameLabel);
+    const infoContainer = document.createElement('div');
+    infoContainer.className = 'motor-info';
+    this.element.appendChild(infoContainer);
 
-    this.slider = document.createElement('input');
-    this.slider.type = 'range';
-    this.slider.min = '0';
-    this.slider.max = '1';
-    this.slider.step = '0.01';
-    this.slider.className = 'motor-slider';
-    this.slider.addEventListener('input', async () => {
+    const nameLabel = document.createElement('label');
+    nameLabel.className = 'motor-label-name';
+    nameLabel.textContent = name;
+    infoContainer.appendChild(nameLabel);
+
+    this.currentLabel = document.createElement('label');
+    this.currentLabel.className = 'motor-label-current';
+    this.currentLabel.textContent = '-';
+    infoContainer.appendChild(this.currentLabel);
+
+    this.loadLabel = document.createElement('label');
+    this.loadLabel.className = 'motor-label-load';
+    this.loadLabel.textContent = '-';
+    infoContainer.appendChild(this.loadLabel);
+
+    this.targetSlider = new Slider('motor-target-slider');
+    this.element.appendChild(this.targetSlider.element);
+    this.targetSlider.slider.addEventListener('input', async () => {
       this.lastUserChange = performance.now();
       if (this.moveRequestInFlight) {
         // Allow the previous request to finish first to avoid
@@ -116,10 +128,10 @@ class SingleMotorView {
         return;
       }
       this.moveRequestInFlight = true;
-      let prevValue = this.slider.valueAsNumber;
+      let prevValue = this.targetSlider.value();
       while (true) {
         await this.onChangeTarget(prevValue);
-        const newValue = this.slider.valueAsNumber;
+        const newValue = this.targetSlider.value();
         if (newValue == prevValue) {
           break;
         }
@@ -127,23 +139,58 @@ class SingleMotorView {
       }
       this.moveRequestInFlight = false;
     });
-    this.element.appendChild(this.slider);
-
-    this.currentContainer = document.createElement('div');
-    this.currentContainer.className = 'motor-position-pointer-container';
-    this.currentValue = document.createElement('div');
-    this.currentValue.className = 'motor-position-pointer';
-    this.currentContainer.appendChild(this.currentValue);
-    this.element.appendChild(this.currentContainer);
+    this.stateSlider = new Slider('motor-state-slider');
+    this.element.appendChild(this.stateSlider.element);
   }
 
   handleStatus(status: MotorStatus) {
-    this.currentValue.style.left = (status.relativePos * 100).toFixed(4) + '%';
+    this.stateSlider.setValue(status.relativePos);
+    this.currentLabel.textContent = status.current.toFixed(1) + 'mA';
+    this.loadLabel.textContent = status.load + '';
 
     // Only update the slider if the user hasn't touched it recently.
     if (performance.now() - this.lastUserChange > 5000) {
-      this.slider.value = '' + status.targetRelativePos;
+      this.targetSlider.setValue(status.targetRelativePos);
     }
+  }
+}
+
+class Slider {
+  public element: HTMLElement;
+  public slider: HTMLInputElement;
+  private label: HTMLLabelElement;
+
+  constructor(clsName: string) {
+    this.slider = document.createElement('input');
+    this.slider.type = 'range';
+    this.slider.min = '0';
+    this.slider.max = '1';
+    this.slider.step = '0.001';
+    this.slider.className = clsName;
+
+    this.element = document.createElement('div');
+    this.element.className = 'motor-slider-container';
+    this.element.appendChild(this.slider);
+
+    this.label = document.createElement('label');
+    this.label.className = 'motor-slider-label';
+    this.element.appendChild(this.label);
+
+    this.slider.addEventListener('input', () => this.updateLabel());
+    this.updateLabel();
+  }
+
+  private updateLabel() {
+    this.label.textContent = this.slider.valueAsNumber.toFixed(2);
+  }
+
+  public value(): number {
+    return this.slider.valueAsNumber;
+  }
+
+  public setValue(value: number) {
+    this.slider.value = '' + value;
+    this.updateLabel();
   }
 }
 

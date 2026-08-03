@@ -3,3 +3,38 @@
   max-width: 450px;
   margin: auto;
 }
+
+.motor-info {
+  display: flex;
+}
+
+.motor-info label {
+  display: block;
+  margin: 0 5px;
+}
+
+.motor-label-current::before {
+  display: inline;
+  font-weight: bolder;
+  content: 'Current:';
+}
+
+.motor-label-load::before {
+  display: inline;
+  font-weight: bolder;
+  content: 'Load:';
+}
+
+.motor-slider-container {
+  display: block;
+  display: flex;
+}
+
+.motor-slider-container input {
+  width: calc(100% - 5em);
+}
+
+.motor-state-slider {
+  pointer-events: none;
+  accent-color: #d5d5d5;
+}
