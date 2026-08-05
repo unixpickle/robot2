@@ -88,3 +88,7 @@ func (m *MotorStatus) Equal(m1 *MotorStatus) bool {
 func (m *MotorStatus) IsOverloaded() bool {
 	return m.Status&uint8(StatusOverload) != 0
 }
+
+func (m *MotorStatus) IsMoving() bool {
+	return m.Moving != 0
+}

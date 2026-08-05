@@ -1,3 +1,4 @@
+// Command setid sets a motor ID connected to the serial bus.
 package setid
 
 import (

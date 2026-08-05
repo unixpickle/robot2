@@ -58,8 +58,11 @@ type MotorController struct {
 	conn *Connection
 	mux  *http.ServeMux
 
-	limits  atomic.Value // contains a map[string]MotorLimit
-	targets *sync.Map    // maps uint8 to uint16
+	changeLimitsLock sync.Mutex
+	limits           atomic.Value // contains a map[string]MotorLimit
+
+	changeTargetLock sync.Mutex
+	targets          *sync.Map // maps uint8 to uint16
 
 	listenersLock sync.RWMutex
 	listeners     map[*statusListener]struct{}
@@ -71,7 +74,7 @@ func NewMotorController(conn *Connection) (*MotorController, error) {
 	limits := map[string]MotorLimit{}
 	targets := new(sync.Map)
 	for name, id := range motorIDs {
-		if err := conn.SetOverloadProtection(id, 50, time.Second*2, 20); err != nil {
+		if err := conn.SetOverloadProtection(id, 80, time.Second*2, 20); err != nil {
 			return nil, err
 		}
 		if min, max, err := conn.PositionLimit(id); err != nil {
@@ -131,17 +134,25 @@ func (m *MotorController) handleSetLimits(w http.ResponseWriter, r *http.Request
 		apiutil.ServeError(w, err)
 		return
 	}
+	if err := m.changeLimits(results); err != nil {
+		apiutil.ServeError(w, err)
+	} else {
+		apiutil.ServeData(w, true)
+	}
+}
+
+func (m *MotorController) changeLimits(results map[string]MotorLimit) error {
+	m.changeLimitsLock.Lock()
+	defer m.changeLimitsLock.Unlock()
 	for name, limit := range results {
 		if id, ok := motorIDs[name]; !ok {
-			apiutil.ServeError(w, &apiutil.WebError{Message: "unknown motor ID", Code: http.StatusBadRequest})
-			return
+			return &apiutil.WebError{Message: "unknown motor ID", Code: http.StatusBadRequest}
 		} else if err := m.conn.SetPositionLimit(id, limit.Min, limit.Max); err != nil {
-			apiutil.ServeError(w, err)
-			return
+			return err
 		}
 	}
 	m.limits.Store(results)
-	apiutil.ServeData(w, true)
+	return nil
 }
 
 func (m *MotorController) handleTorque(w http.ResponseWriter, r *http.Request) {
@@ -207,12 +218,21 @@ func (m *MotorController) handleMove(w http.ResponseWriter, r *http.Request) {
 		pos = limit.Min + uint16(math.Round(relPosValue*float64(limit.Max-limit.Min)))
 	}
 
-	if err := m.conn.SetPosition(motorID, uint16(pos), 100, 10); err != nil {
+	if err := m.changeTarget(motorID, pos); err != nil {
 		apiutil.ServeError(w, err)
-		return
+	} else {
+		apiutil.ServeData(w, true)
 	}
-	m.targets.Store(motorID, uint16(pos))
-	apiutil.ServeData(w, true)
+}
+
+func (m *MotorController) changeTarget(motorID uint8, target uint16) error {
+	m.changeTargetLock.Lock()
+	defer m.changeTargetLock.Unlock()
+	if err := m.conn.SetPosition(motorID, target, 300, 10); err != nil {
+		return err
+	}
+	m.targets.Store(motorID, target)
+	return nil
 }
 
 func (m *MotorController) handleStream(w http.ResponseWriter, r *http.Request) {

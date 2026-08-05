@@ -1,3 +1,5 @@
+// Command calibrate guides the user through zeroing out the robot's motor
+// positions and finding suitable bounds for each motor's movement.
 package main
 
 import (
@@ -24,7 +26,7 @@ func main() {
 	fmt.Println("Move the joints such that:")
 	fmt.Println(" * The shoulder pan is pointed towards the front center")
 	fmt.Println(" * The shoulder / elbow / wrist flex are pointing straight upward")
-	fmt.Println(" * The gripper is half open")
+	fmt.Println(" * The fingers of the gripper are parallel")
 	fmt.Println(" * The wrist roll is fully centered (motor will be facing backward when arm is facing straight up)")
 	fmt.Println("Hit enter once complete.")
 	essentials.Must(waitNewline())
