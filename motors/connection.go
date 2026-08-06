@@ -98,9 +98,22 @@ func (c *Connection) SetOverloadProtection(id, threshold uint8, delay time.Durat
 	if err := c.read(id, 19, &flags); err != nil {
 		return fmt.Errorf("get overload flags: %w", err)
 	}
-	if (flags & (1 << 5)) == 0 {
-		flags |= 1 << 5
-		if err := c.write(id, 19, flags); err != nil {
+	newFlags := flags
+	if threshold == 100 {
+		if (flags & (1 << 5)) != 0 {
+			newFlags ^= (1 << 5)
+		}
+	} else {
+		if (flags & (1 << 5)) == 0 {
+			newFlags |= 1 << 5
+		}
+	}
+	var model uint16
+	if err := c.read(id, 3, &model); err != nil {
+		panic(err)
+	}
+	if newFlags != flags {
+		if err := c.write(id, 19, newFlags); err != nil {
 			return fmt.Errorf("set overload flags: %w", err)
 		}
 	}

@@ -1,8 +1,9 @@
 // Command setid sets a motor ID connected to the serial bus.
-package setid
+package main
 
 import (
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/unixpickle/essentials"
@@ -23,4 +24,8 @@ func main() {
 	motorConn, err := motors.NewConnection(motorPort, time.Second*2)
 	essentials.Must(err)
 	essentials.Must(motorConn.SetID(uint8(oldID), uint8(newID)))
+
+	status, err := motorConn.MotorStatus(uint8(newID))
+	essentials.Must(err)
+	fmt.Println("final status:", status)
 }

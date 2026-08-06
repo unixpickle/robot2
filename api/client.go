@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -160,6 +161,23 @@ func (c *Client) Move(motor string, pos int16) error {
 	q := fmt.Sprintf("motor=%s&pos=%d", motor, pos)
 	if err := c.doRequest("/motor/move", q, nil, nil); err != nil {
 		return fmt.Errorf("set torque enabled: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) MoveAngles(angles *motors.MotorAngles) error {
+	for i, name := range c.MotorNames() {
+		angle := angles.Vec()[i]
+		if angle < -math.Pi {
+			angle += math.Pi * 2
+		}
+		if angle > math.Pi {
+			angle -= math.Pi * 2
+		}
+		pos := int16((angle + math.Pi) / math.Pi * 2048)
+		if err := c.Move(name, pos); err != nil {
+			return err
+		}
 	}
 	return nil
 }
