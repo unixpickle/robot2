@@ -6,6 +6,20 @@ import (
 	"github.com/unixpickle/model3d/model3d"
 )
 
+func PositionToAngle(pos int16) float64 {
+	return math.Pi * (float64(pos) - 2048) / 2048
+}
+
+func AngleToPosition(theta float64) int16 {
+	for theta < -math.Pi {
+		theta += math.Pi * 2
+	}
+	for theta > math.Pi {
+		theta -= math.Pi * 2
+	}
+	return int16(math.Max(0, math.Min(4095, 2048+theta*2048/math.Pi)))
+}
+
 // EndCoords represents the location of both fingers of the robot in
 // 3D space. The z-axis points up, the y-axis faces in front of the robot,
 // and the x-axis faces to the left of the robot when you are looking at
@@ -13,6 +27,10 @@ import (
 type EndCoords struct {
 	MovingFinger model3d.Coord3D
 	LockedFinger model3d.Coord3D
+}
+
+func (e *EndCoords) Mid() model3d.Coord3D {
+	return e.MovingFinger.Mid(e.LockedFinger)
 }
 
 // MotorAngles stores the angle of each motor in radians, assuming that
@@ -169,6 +187,53 @@ func CoordsToAngles(targets *EndCoords) *MotorAngles {
 		}
 	}
 	return NewMotorAngles(minVec)
+}
+
+func HoverPositionToCoordAngles(
+	limitMin, limitMax *MotorAngles,
+	centerPos model3d.Coord3D,
+	gripperAngle float64,
+) *MotorAngles {
+	const delta = 0.01
+
+	shoulderPan := math.Atan2(centerPos.X, centerPos.Y)
+
+	var best *MotorAngles
+	for shoulder := limitMin.ShoulderLift; shoulder < limitMax.ShoulderLift; shoulder += delta {
+		var bestInner *MotorAngles
+		var innerDist float64
+		for elbow := limitMin.ElbowFlex; elbow < limitMax.ElbowFlex; elbow += delta {
+			wrist := math.Pi/2 - (shoulder + elbow)
+			if wrist < limitMin.WristFlex || wrist > limitMax.WristFlex {
+				continue
+			}
+			angles := &MotorAngles{
+				ShoulderPan:  shoulderPan,
+				ShoulderLift: shoulder,
+				ElbowFlex:    elbow,
+				WristFlex:    wrist,
+				WristRoll:    shoulderPan,
+				Gripper:      0,
+			}
+			newPos := AnglesToCoords(angles)
+			dist := math.Abs(newPos.LockedFinger.Z - centerPos.Z)
+			if bestInner == nil || dist < innerDist {
+				innerDist = dist
+				bestInner = angles
+			}
+		}
+		if best == nil {
+			best = bestInner
+			continue
+		}
+
+		bestCoord := AnglesToCoords(best).Mid()
+		newCoord := AnglesToCoords(bestInner).Mid()
+		if bestCoord.Dist(centerPos) > newCoord.Dist(centerPos) {
+			best = bestInner
+		}
+	}
+	return best
 }
 
 func searchBest(min, max *MotorAngles, segments int, target *EndCoords) *MotorAngles {

@@ -1,10 +1,5 @@
-// Command fit_to_table attempts to push the arm against the table repeatedly
-// at different positions to fine-tune the motor calibration by forcing all of
-// the found points to line up at the same z value.
-//
-// After the command is complete, the command will move the arm to the upright
-// position under the new angles, such that a further calibration command could
-// be run.
+// Command ik_move attempts to move the fingers to specified coordinates.
+// If only one coordinate is given, then a hover position is found.
 package main
 
 import (
@@ -24,26 +19,41 @@ import (
 func main() {
 	parseClient := api.AddClientFlags()
 	flag.Usage = func() {
-		fmt.Fprintln(flag.CommandLine.Output(), "Usage: %s [flags] <locked_x1,y1,z1> <moving_x2,y2,z2>", os.Args[0])
+		fmt.Fprintf(
+			flag.CommandLine.Output(),
+			"Usage: %s [flags] [<locked_x1,y1,z1> <moving_x2,y2,z2> | <hover_x,y,z>",
+			os.Args[0],
+		)
 		flag.PrintDefaults()
 		essentials.Die()
 	}
 	flag.Parse()
 
-	if len(flag.Args()) != 2 {
+	if len(flag.Args()) > 2 || len(flag.Args()) == 0 {
 		flag.Usage()
 	}
-	lockedPos := parseCoord(flag.Args()[0])
-	movingPos := parseCoord(flag.Args()[1])
-
-	angles := motors.CoordsToAngles(&motors.EndCoords{LockedFinger: lockedPos, MovingFinger: movingPos})
-	endCoords := motors.AnglesToCoords(angles)
-	lockedDist := endCoords.LockedFinger.Dist(lockedPos)
-	movingDist := endCoords.MovingFinger.Dist(movingPos)
-	log.Printf("solved: locked distance %f, moving distance %f", lockedDist, movingDist)
 
 	client, err := parseClient()
 	essentials.Must(err)
+
+	var angles *motors.MotorAngles
+	if len(flag.Args()) == 2 {
+		lockedPos := parseCoord(flag.Args()[0])
+		movingPos := parseCoord(flag.Args()[1])
+		angles = motors.CoordsToAngles(&motors.EndCoords{LockedFinger: lockedPos, MovingFinger: movingPos})
+		endCoords := motors.AnglesToCoords(angles)
+		lockedDist := endCoords.LockedFinger.Dist(lockedPos)
+		movingDist := endCoords.MovingFinger.Dist(movingPos)
+		log.Printf("solved: locked distance %f, moving distance %f", lockedDist, movingDist)
+	} else {
+		centerPos := parseCoord(flag.Args()[0])
+		min, max, err := client.LimitsAngles()
+		essentials.Must(err)
+		angles = motors.HoverPositionToCoordAngles(min, max, centerPos, 0)
+		endCoords := motors.AnglesToCoords(angles)
+		log.Printf("solved: distance %f", endCoords.Mid().Dist(centerPos))
+	}
+
 	client.MoveAngles(angles)
 }
 

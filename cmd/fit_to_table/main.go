@@ -46,7 +46,7 @@ func main() {
 	}
 
 	thetaToPos := func(theta float64) int16 {
-		return int16(2048 + theta*4096/360)
+		return motors.AngleToPosition(theta * math.Pi / 180)
 	}
 	goToTargets := func(p [3]float64) *motors.MotorAngles {
 		// Center wrist to ensure the locked finger hits the table first.

@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -139,6 +138,14 @@ func (c *Client) CalibrateCenter() error {
 	return nil
 }
 
+func (c *Client) Limits() (map[string]motors.MotorLimit, error) {
+	var result map[string]motors.MotorLimit
+	if err := c.doRequest("/motor/limits", "", nil, &result); err != nil {
+		return nil, fmt.Errorf("get limits: %w", err)
+	}
+	return result, nil
+}
+
 func (c *Client) SetLimits(limits map[string]motors.MotorLimit) error {
 	if err := c.doRequest("/motor/setlimits", "", limits, nil); err != nil {
 		return fmt.Errorf("set limits: %w", err)
@@ -168,18 +175,27 @@ func (c *Client) Move(motor string, pos int16) error {
 func (c *Client) MoveAngles(angles *motors.MotorAngles) error {
 	for i, name := range c.MotorNames() {
 		angle := angles.Vec()[i]
-		if angle < -math.Pi {
-			angle += math.Pi * 2
-		}
-		if angle > math.Pi {
-			angle -= math.Pi * 2
-		}
-		pos := int16((angle + math.Pi) / math.Pi * 2048)
+		pos := motors.AngleToPosition(angle)
 		if err := c.Move(name, pos); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (c *Client) LimitsAngles() (min *motors.MotorAngles, max *motors.MotorAngles, err error) {
+	if rawLimits, err := c.Limits(); err != nil {
+		return nil, nil, err
+	} else {
+		var minVec, maxVec [6]float64
+		for i, name := range c.MotorNames() {
+			lim := rawLimits[name]
+			minVec[i] = motors.PositionToAngle(int16(lim.Min))
+			maxVec[i] = motors.PositionToAngle(int16(lim.Max))
+		}
+		min, max = motors.NewMotorAngles(minVec), motors.NewMotorAngles(maxVec)
+		return min, max, nil
+	}
 }
 
 func (c *Client) doRequest(path, query string, objIn, objOut any) error {
