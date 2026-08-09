@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/unixpickle/robot2/kinematics"
 	"github.com/unixpickle/robot2/motors"
 )
 
@@ -44,8 +45,12 @@ func NewClient(baseURL *url.URL) *Client {
 	return &Client{baseURL: *baseURL}
 }
 
-func (c *Client) MotorNames() []string {
-	return []string{"shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"}
+func (c *Client) MotorNames() ([]string, error) {
+	var result []string
+	if err := c.doRequest("/motor/names", "", nil, &result); err != nil {
+		return nil, fmt.Errorf("get motor names: %w", err)
+	}
+	return result, nil
 }
 
 func (c *Client) MotorStatuses() (map[string]*motors.AnnotatedStatus, error) {
@@ -172,10 +177,14 @@ func (c *Client) Move(motor string, pos int16) error {
 	return nil
 }
 
-func (c *Client) MoveAngles(angles *motors.MotorAngles) error {
-	for i, name := range c.MotorNames() {
+func (c *Client) MoveAngles(angles *kinematics.MotorAngles) error {
+	names, err := c.MotorNames()
+	if err != nil {
+		return err
+	}
+	for i, name := range names {
 		angle := angles.Vec()[i]
-		pos := motors.AngleToPosition(angle)
+		pos := kinematics.AngleToPosition(angle)
 		if err := c.Move(name, pos); err != nil {
 			return err
 		}
@@ -183,19 +192,23 @@ func (c *Client) MoveAngles(angles *motors.MotorAngles) error {
 	return nil
 }
 
-func (c *Client) LimitsAngles() (min *motors.MotorAngles, max *motors.MotorAngles, err error) {
-	if rawLimits, err := c.Limits(); err != nil {
+func (c *Client) LimitsAngles() (min *kinematics.MotorAngles, max *kinematics.MotorAngles, err error) {
+	names, err := c.MotorNames()
+	if err != nil {
 		return nil, nil, err
-	} else {
-		var minVec, maxVec [6]float64
-		for i, name := range c.MotorNames() {
-			lim := rawLimits[name]
-			minVec[i] = motors.PositionToAngle(int16(lim.Min))
-			maxVec[i] = motors.PositionToAngle(int16(lim.Max))
-		}
-		min, max = motors.NewMotorAngles(minVec), motors.NewMotorAngles(maxVec)
-		return min, max, nil
 	}
+	rawLimits, err := c.Limits()
+	if err != nil {
+		return nil, nil, err
+	}
+	var minVec, maxVec [6]float64
+	for i, name := range names {
+		lim := rawLimits[name]
+		minVec[i] = kinematics.PositionToAngle(int16(lim.Min))
+		maxVec[i] = kinematics.PositionToAngle(int16(lim.Max))
+	}
+	min, max = kinematics.NewMotorAngles(minVec), kinematics.NewMotorAngles(maxVec)
+	return min, max, nil
 }
 
 func (c *Client) doRequest(path, query string, objIn, objOut any) error {

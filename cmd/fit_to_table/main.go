@@ -16,6 +16,7 @@ import (
 
 	"github.com/unixpickle/essentials"
 	"github.com/unixpickle/robot2/api"
+	"github.com/unixpickle/robot2/kinematics"
 	"github.com/unixpickle/robot2/motors"
 )
 
@@ -46,19 +47,19 @@ func main() {
 	}
 
 	thetaToPos := func(theta float64) int16 {
-		return motors.AngleToPosition(theta * math.Pi / 180)
+		return kinematics.AngleToPosition(theta * math.Pi / 180)
 	}
-	goToTargets := func(p [3]float64) *motors.MotorAngles {
+	goToTargets := func(p [3]float64) *kinematics.MotorAngles {
 		// Center wrist to ensure the locked finger hits the table first.
 		client.Move("wrist_roll", 2048)
 
 		client.Move("shoulder_lift", thetaToPos(p[0]))
 		client.Move("elbow_flex", thetaToPos(p[1]))
 		client.Move("wrist_flex", thetaToPos(p[2]))
-		return motors.MotorAnglesFromStatuses(waitForStop(client))
+		return kinematics.MotorAnglesFromStatuses(waitForStop(client))
 	}
 
-	var onTableAngles []*motors.MotorAngles
+	var onTableAngles []*kinematics.MotorAngles
 	for _, targets := range tryPositions {
 		log.Printf("entering initial target %#v", targets[0])
 		goToTargets(targets[0])
@@ -66,11 +67,11 @@ func main() {
 		final := goToTargets(targets[1])
 		onTableAngles = append(onTableAngles, final)
 
-		log.Printf("z value %f; homing after pose", motors.AnglesToCoords(final).LockedFinger.Z)
+		log.Printf("z value %f; homing after pose", kinematics.AnglesToCoords(final).LockedFinger.Z)
 		goToTargets([3]float64{})
 	}
 
-	log.Printf("initial Z variance is %f", varianceForStep(onTableAngles, &motors.MotorAngles{}))
+	log.Printf("initial Z variance is %f", varianceForStep(onTableAngles, &kinematics.MotorAngles{}))
 
 	deltas := []float64{}
 	for x := -maxChange; x < maxChange; x += delta {
@@ -78,7 +79,7 @@ func main() {
 	}
 
 	var lock sync.Mutex
-	var bestDelta motors.MotorAngles
+	var bestDelta kinematics.MotorAngles
 	bestVariance := math.Inf(1)
 
 	essentials.ConcurrentMap(0, len(deltas)*len(deltas)*len(deltas), func(i int) {
@@ -88,7 +89,7 @@ func main() {
 		i /= len(deltas)
 		wristDelta := deltas[i]
 
-		ds := motors.MotorAngles{
+		ds := kinematics.MotorAngles{
 			ShoulderLift: shoulderDelta,
 			ElbowFlex:    elbowDelta,
 			WristFlex:    wristDelta,
@@ -116,12 +117,12 @@ func main() {
 	client.CalibrateCenter()
 }
 
-func varianceForStep(angles []*motors.MotorAngles, deltas *motors.MotorAngles) float64 {
+func varianceForStep(angles []*kinematics.MotorAngles, deltas *kinematics.MotorAngles) float64 {
 	var sum, sqSum float64
 	for _, ang := range angles {
 		added := *ang
 		added.Add(deltas)
-		z := motors.AnglesToCoords(&added).LockedFinger.Z
+		z := kinematics.AnglesToCoords(&added).LockedFinger.Z
 		sum += z
 		sqSum += z * z
 	}

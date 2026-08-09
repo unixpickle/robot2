@@ -13,7 +13,7 @@ import (
 	"github.com/unixpickle/essentials"
 	"github.com/unixpickle/model3d/model3d"
 	"github.com/unixpickle/robot2/api"
-	"github.com/unixpickle/robot2/motors"
+	"github.com/unixpickle/robot2/kinematics"
 )
 
 func main() {
@@ -36,12 +36,15 @@ func main() {
 	client, err := parseClient()
 	essentials.Must(err)
 
-	var angles *motors.MotorAngles
+	var angles *kinematics.MotorAngles
 	if len(flag.Args()) == 2 {
 		lockedPos := parseCoord(flag.Args()[0])
 		movingPos := parseCoord(flag.Args()[1])
-		angles = motors.CoordsToAngles(&motors.EndCoords{LockedFinger: lockedPos, MovingFinger: movingPos})
-		endCoords := motors.AnglesToCoords(angles)
+		angles = kinematics.CoordsToAngles(&kinematics.EndCoords{
+			LockedFinger: lockedPos,
+			MovingFinger: movingPos,
+		})
+		endCoords := kinematics.AnglesToCoords(angles)
 		lockedDist := endCoords.LockedFinger.Dist(lockedPos)
 		movingDist := endCoords.MovingFinger.Dist(movingPos)
 		log.Printf("solved: locked distance %f, moving distance %f", lockedDist, movingDist)
@@ -49,8 +52,8 @@ func main() {
 		centerPos := parseCoord(flag.Args()[0])
 		min, max, err := client.LimitsAngles()
 		essentials.Must(err)
-		angles = motors.HoverPositionToCoordAngles(min, max, centerPos, 0)
-		endCoords := motors.AnglesToCoords(angles)
+		angles = kinematics.HoverPositionToCoordAngles(min, max, centerPos, 0)
+		endCoords := kinematics.AnglesToCoords(angles)
 		log.Printf("solved: distance %f", endCoords.Mid().Dist(centerPos))
 	}
 

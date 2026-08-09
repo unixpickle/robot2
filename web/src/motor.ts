@@ -66,6 +66,21 @@ export class MotorController {
       return view;
     });
 
+    const controls = document.createElement('div');
+    controls.className = 'motors-controls';
+    this.element.appendChild(controls);
+
+    const home = document.createElement('button');
+    home.className = 'motors-home-button';
+    home.textContent = 'Home';
+    home.addEventListener('click', async () => {
+      const motors = await apiRequest<[string]>('names');
+      for (const motor of motors) {
+        await apiRequest(`move?motor=${motor}&pos=2048`);
+      }
+    });
+    controls.appendChild(home);
+
     client.onStatus = (statuses: MotorStatuses) => {
       MotorNames.forEach((name, idx) => {
         singleViews[idx].handleStatus(statuses[name]);

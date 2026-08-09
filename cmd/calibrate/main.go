@@ -41,13 +41,16 @@ func main() {
 		endChan <- waitNewline()
 	}()
 
+	motorNames, err := client.MotorNames()
+	essentials.Must(err)
+
 	limits := map[string]motors.MotorLimit{}
-	for _, name := range client.MotorNames() {
+	for _, name := range motorNames {
 		limits[name] = motors.MotorLimit{Min: 2048, Max: 2048}
 	}
 	printLimits := func() {
 		fmt.Printf("limits:")
-		for _, name := range client.MotorNames() {
+		for _, name := range motorNames {
 			limit := limits[name]
 			fmt.Printf(" [%04d, %04d]", limit.Min, limit.Max)
 		}

@@ -71,7 +71,7 @@ func main() {
 		tracks = append(tracks, track)
 	}
 	camController := camera.NewCameraController(tracks, rtcTimeout)
-	motorController, err := motors.NewMotorController(motorConn)
+	motorController, err := motors.NewMotorController(motorConn, nil)
 	if err != nil {
 		log.Fatalf("failed to create motor controller: %s", err)
 	}
