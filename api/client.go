@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
-	"github.com/unixpickle/robot2/kinematics"
 	"github.com/unixpickle/robot2/motors"
 )
 
@@ -177,38 +177,24 @@ func (c *Client) Move(motor string, pos int16) error {
 	return nil
 }
 
-func (c *Client) MoveAngles(angles *kinematics.MotorAngles) error {
-	names, err := c.MotorNames()
-	if err != nil {
-		return err
-	}
-	for i, name := range names {
-		angle := angles.Vec()[i]
-		pos := kinematics.AngleToPosition(angle)
-		if err := c.Move(name, pos); err != nil {
+func (c *Client) WaitUntilStill() error {
+	time.Sleep(time.Second)
+	for {
+		statuses, err := c.MotorStatuses()
+		if err != nil {
 			return err
 		}
+		allDone := true
+		for _, s := range statuses {
+			if s.IsMoving() {
+				allDone = false
+			}
+		}
+		if allDone {
+			return nil
+		}
+		time.Sleep(time.Second)
 	}
-	return nil
-}
-
-func (c *Client) LimitsAngles() (min *kinematics.MotorAngles, max *kinematics.MotorAngles, err error) {
-	names, err := c.MotorNames()
-	if err != nil {
-		return nil, nil, err
-	}
-	rawLimits, err := c.Limits()
-	if err != nil {
-		return nil, nil, err
-	}
-	var minVec, maxVec [6]float64
-	for i, name := range names {
-		lim := rawLimits[name]
-		minVec[i] = kinematics.PositionToAngle(int16(lim.Min))
-		maxVec[i] = kinematics.PositionToAngle(int16(lim.Max))
-	}
-	min, max = kinematics.NewMotorAngles(minVec), kinematics.NewMotorAngles(maxVec)
-	return min, max, nil
 }
 
 func (c *Client) doRequest(path, query string, objIn, objOut any) error {

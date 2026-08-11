@@ -21,7 +21,7 @@ type MotorStatus struct {
 
 	Position    int16  `json:"position"`
 	Speed       int16  `json:"speed"`
-	Load        int16  `json:"load"`
+	rawLoad     uint16 `json:"-"`
 	rawVoltage  uint8  `json:"-"`
 	Temperature uint8  `json:"temperature"`
 	AsyncFlag   uint8  `json:"asyncFlag"`
@@ -34,6 +34,9 @@ type MotorStatus struct {
 
 	// Current is measured in mA.
 	Current float64 `json:"current"`
+
+	// Load is a signed fraction.
+	Load float64 `json:"load"`
 }
 
 func decodeMotorStatus(packet []byte) (*MotorStatus, error) {
@@ -42,7 +45,7 @@ func decodeMotorStatus(packet []byte) (*MotorStatus, error) {
 	if err := decodeResponse(packet, &resp.ID, &resp.ErrorFlags, []any{
 		&resp.Position,
 		&resp.Speed,
-		&resp.Load,
+		&resp.rawLoad,
 		&resp.rawVoltage,
 		&resp.Temperature,
 		&resp.AsyncFlag,
@@ -55,9 +58,10 @@ func decodeMotorStatus(packet []byte) (*MotorStatus, error) {
 	}
 
 	// The load is signed but is only 9 bits.
-	if resp.Load&(1<<9) != 0 {
-		resp.Load ^= (1 << 9)
-		resp.Load = -resp.Load
+	if resp.rawLoad&(1<<10) != 0 {
+		resp.Load = -float64(resp.rawLoad^(1<<10)) / 1000
+	} else {
+		resp.Load = float64(resp.rawLoad) / 1000
 	}
 
 	resp.Voltage = float64(resp.rawVoltage) / 10.0
@@ -68,7 +72,7 @@ func decodeMotorStatus(packet []byte) (*MotorStatus, error) {
 
 func (m *MotorStatus) String() string {
 	return fmt.Sprintf(
-		"MotorStatus(id=%d, errFlags=%d, position=%d, speed=%d, load=%d, voltage=%.1f, current=%f)",
+		"MotorStatus(id=%d, errFlags=%d, position=%d, speed=%d, load=%.3f, voltage=%.1f, current=%f)",
 		m.ID,
 		m.ErrorFlags,
 		m.Position,

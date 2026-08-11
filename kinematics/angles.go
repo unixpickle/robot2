@@ -80,6 +80,11 @@ func (m *MotorAngles) SetVec(v [6]float64) {
 	}
 }
 
+func (m *MotorAngles) Copy() *MotorAngles {
+	res := *m
+	return &res
+}
+
 func (m *MotorAngles) Add(m1 *MotorAngles) {
 	v := m.Vec()
 	for i, x := range m1.Vec() {

@@ -19,6 +19,10 @@ func (e *EndCoords) Mid() model3d.Coord3D {
 	return e.MovingFinger.Mid(e.LockedFinger)
 }
 
+func (e *EndCoords) Min() model3d.Coord3D {
+	return e.MovingFinger.Min(e.LockedFinger)
+}
+
 // AnglesToCoords computes coordinates given the motor positions.
 func AnglesToCoords(angles *MotorAngles) *EndCoords {
 	// 9mm vertically between wrist roll and finger bases

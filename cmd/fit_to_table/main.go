@@ -1,152 +1,98 @@
 // Command fit_to_table attempts to push the arm against the table repeatedly
-// at different positions to fine-tune the motor calibration by forcing all of
-// the found points to line up at the same z value.
-//
-// After the command is complete, the command will move the arm to the upright
-// position under the new angles, such that a further calibration command could
-// be run.
+// at different positions to show how well the kinematics model is tuned.
 package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
-	"math"
-	"sync"
-	"time"
 
 	"github.com/unixpickle/essentials"
+	"github.com/unixpickle/model3d/model2d"
+	"github.com/unixpickle/model3d/model3d"
 	"github.com/unixpickle/robot2/api"
 	"github.com/unixpickle/robot2/kinematics"
-	"github.com/unixpickle/robot2/motors"
 )
 
 func main() {
-	var maxChange, delta float64
+	var maxZ, minZ, gridDelta, zDelta, minElbowLoad, minShoulderLoad float64
 	parseClient := api.AddClientFlags()
-	flag.Float64Var(&maxChange, "max-change", 5.0, "maximum absolute change from the baseline calibration to make")
-	flag.Float64Var(&delta, "delta", 0.2, "delta for grid search")
+	flag.Float64Var(&minZ, "min-z", -110.0, "lowest possible Z to search")
+	flag.Float64Var(&maxZ, "max-z", 10.0, "initial Z for descent")
+	flag.Float64Var(&gridDelta, "grid-delta", 50.0, "delta for coordinate grid search")
+	flag.Float64Var(&zDelta, "z-delta", 10, "delta for lowering incrementally")
+	flag.Float64Var(
+		&minElbowLoad,
+		"min-elbow-load",
+		-0.04,
+		"once load is below thus we have hit table",
+	)
+	flag.Float64Var(
+		&minShoulderLoad,
+		"min-shoulder-load",
+		-0.1,
+		"once load is below thus we have hit table",
+	)
 	flag.Parse()
 
 	client, err := parseClient()
 	essentials.Must(err)
 
-	// For any set of angles, we want elbow+shoulder+wrist > T,
-	// where T can be some angle threshold like 130 degrees, so that the tip of
-	// the claw is actually likely to be touching the table and not some other
-	// part of the arm.
-	// Each position is a shoulder_lift, elbow_flex, and wrist_flex expressed
-	// as an angle in degrees, encoded first as a start and then as a target
-	// that should surely be on the table.
-	tryPositions := [][2][3]float64{
-		{{10, 90, 0}, {45, 90, 0}},
-		{{45, 45, 90}, {80, 45, 90}},
-		{{41, 73, 0}, {75, 73, 0}},
-		{{41, 73, 0}, {41, 80, 50}},
-		{{41, 73, 0}, {41, 100, 10}},
-		{{41, 73, 0}, {35, 100, 20}},
-	}
+	min, max, err := client.LimitsAngles()
+	essentials.Must(err)
 
-	thetaToPos := func(theta float64) int16 {
-		return kinematics.AngleToPosition(theta * math.Pi / 180)
-	}
-	goToTargets := func(p [3]float64) *kinematics.MotorAngles {
-		// Center wrist to ensure the locked finger hits the table first.
-		client.Move("wrist_roll", 2048)
+	log.Println("homing...")
+	essentials.Must(client.HomeSafely())
 
-		client.Move("shoulder_lift", thetaToPos(p[0]))
-		client.Move("elbow_flex", thetaToPos(p[1]))
-		client.Move("wrist_flex", thetaToPos(p[2]))
-		return kinematics.MotorAnglesFromStatuses(waitForStop(client))
-	}
-
-	var onTableAngles []*kinematics.MotorAngles
-	for _, targets := range tryPositions {
-		log.Printf("entering initial target %#v", targets[0])
-		goToTargets(targets[0])
-		log.Printf("entering table target %#v", targets[1])
-		final := goToTargets(targets[1])
-		onTableAngles = append(onTableAngles, final)
-
-		log.Printf("z value %f; homing after pose", kinematics.AnglesToCoords(final).LockedFinger.Z)
-		goToTargets([3]float64{})
-	}
-
-	log.Printf("initial Z variance is %f", varianceForStep(onTableAngles, &kinematics.MotorAngles{}))
-
-	deltas := []float64{}
-	for x := -maxChange; x < maxChange; x += delta {
-		deltas = append(deltas, x)
-	}
-
-	var lock sync.Mutex
-	var bestDelta kinematics.MotorAngles
-	bestVariance := math.Inf(1)
-
-	essentials.ConcurrentMap(0, len(deltas)*len(deltas)*len(deltas), func(i int) {
-		shoulderDelta := deltas[i%len(deltas)]
-		i /= len(deltas)
-		elbowDelta := deltas[i%len(deltas)]
-		i /= len(deltas)
-		wristDelta := deltas[i]
-
-		ds := kinematics.MotorAngles{
-			ShoulderLift: shoulderDelta,
-			ElbowFlex:    elbowDelta,
-			WristFlex:    wristDelta,
-		}
-		variance := varianceForStep(onTableAngles, &ds)
-		lock.Lock()
-		if variance < bestVariance {
-			bestVariance = variance
-			bestDelta = ds
-		}
-		lock.Unlock()
-	})
-
-	log.Printf("final Z variance is %f", bestVariance)
-	log.Printf("best delta is %f", bestDelta)
-
-	log.Println("going to new homed target...")
-	essentials.Must(client.Move("wrist_roll", 2048))
-	essentials.Must(client.Move("gripper", 2048))
-	essentials.Must(client.Move("shoulder_pan", 2048))
-	goToTargets([3]float64{bestDelta.ShoulderLift, bestDelta.ElbowFlex, bestDelta.WristFlex})
-
-	log.Println("creating new home center...")
-	time.Sleep(time.Second * 2)
-	client.CalibrateCenter()
-}
-
-func varianceForStep(angles []*kinematics.MotorAngles, deltas *kinematics.MotorAngles) float64 {
-	var sum, sqSum float64
-	for _, ang := range angles {
-		added := *ang
-		added.Add(deltas)
-		z := kinematics.AnglesToCoords(&added).LockedFinger.Z
-		sum += z
-		sqSum += z * z
-	}
-	mean := sum / float64(len(angles))
-	sqMean := sqSum / float64(len(angles))
-	return sqMean - mean*mean
-}
-
-func waitForStop(c *api.Client) map[string]*motors.AnnotatedStatus {
-	// Allow initial motion to start.
-	time.Sleep(time.Second)
-
-	for {
-		statuses, err := c.MotorStatuses()
-		essentials.Must(err)
-		allDone := true
-		for _, s := range statuses {
-			if s.IsMoving() {
-				allDone = false
+	var results []model3d.Coord3D
+	for x := -200.0; x < 200; x += gridDelta {
+		for y := 0.0; y < 300; y += gridDelta {
+			if model2d.XY(x, y).Norm() < 100 {
+				// Do not drop too close to the base.
+				continue
 			}
+			centerPos := model3d.XYZ(x, y, maxZ)
+			angles := kinematics.HoverPositionToCoordAngles(min, max, centerPos, 0)
+			endCoords := kinematics.AnglesToCoords(angles)
+			dist := endCoords.Mid().Dist(centerPos)
+			if dist > 2 {
+				continue
+			}
+			log.Printf("trying coordinate (%f,%f) with IK error %f", x, y, dist)
+			essentials.Must(client.MoveAngles(angles))
+			essentials.Must(client.WaitUntilStill())
+
+			var foundPoint model3d.Coord3D
+			for z := maxZ; z > minZ; z -= zDelta {
+				centerPos.Z = z
+				angles = kinematics.HoverPositionToCoordAngles(min, max, centerPos, 0)
+				essentials.Must(client.MoveAngles(angles))
+				essentials.Must(client.WaitUntilStill())
+				state, err := client.CurrentAngles()
+				essentials.Must(err)
+				ps := kinematics.AnglesToCoords(state)
+				p := ps.LockedFinger
+				if ps.MovingFinger.Z < ps.LockedFinger.Z {
+					p = ps.MovingFinger
+				}
+				foundPoint = p
+				stat, err := client.MotorStatuses()
+				essentials.Must(err)
+				elbowLoad := stat["elbow_flex"].Load
+				shoulderLoad := stat["shoulder_lift"].Load
+				log.Printf(" - at z %f, elbow load %f, shoulder load %f", z, elbowLoad, shoulderLoad)
+				if elbowLoad < minElbowLoad || shoulderLoad < minShoulderLoad {
+					break
+				}
+			}
+			log.Printf(" - found point %f,%f,%f", foundPoint.X, foundPoint.Y, foundPoint.Z)
+			results = append(results, foundPoint)
+			essentials.Must(client.HomeSafely())
 		}
-		if allDone {
-			return statuses
-		}
-		time.Sleep(time.Second)
+	}
+
+	fmt.Println("table heightmap:")
+	for _, c := range results {
+		fmt.Println(c.X, c.Y, c.Z)
 	}
 }
