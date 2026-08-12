@@ -1,7 +1,26 @@
+@import './spin.css';
+
 .motor-container {
   display: block;
   max-width: 450px;
-  margin: auto;
+  margin: 5px auto;
+}
+
+.motors-loader {
+  display: block;
+  width: 30px;
+  height: 30px;
+  margin: 10px auto;
+  background-size: 100% 100%;
+  background-position: center;
+  background-image: url('../images/motor_loader.png');
+  animation: spin 2s linear infinite;
+}
+
+.motors-error {
+  margin-top: 10px;
+  text-align: center;
+  color: #af1313;
 }
 
 .motor-info {
@@ -13,16 +32,28 @@
   margin: 0 5px;
 }
 
+.motor-torque-checkbox-loading {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
 .motor-label-current::before {
   display: inline;
   font-weight: bolder;
   content: 'Current:';
+  margin-right: 0.25em;
 }
 
 .motor-label-load::before {
   display: inline;
   font-weight: bolder;
   content: 'Load:';
+  margin-right: 0.25em;
+}
+
+.motor-target-slider,
+.motor-state-slider {
+  height: 1em;
 }
 
 .motor-slider-container {
@@ -37,4 +68,58 @@
 .motor-state-slider {
   pointer-events: none;
   accent-color: #d5d5d5;
+}
+
+.motor-state-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+/* Chrome, Safari, Edge */
+.motor-state-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent; /* or a single uniform color */
+}
+
+/* Firefox */
+.motor-state-slider::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+
+.motor-state-slider::-moz-range-progress {
+  background: transparent; /* removes filled section */
+}
+
+/* Thumb */
+.motor-state-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+
+  width: 0;
+  height: 0;
+
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid #999; /* points upward */
+
+  margin-top: -5px;
+  cursor: pointer;
+}
+
+/* Firefox */
+.motor-state-slider::-moz-range-thumb {
+  width: 0;
+  height: 0;
+
+  border: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid #999;
+  margin-top: -5px;
+
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
 }

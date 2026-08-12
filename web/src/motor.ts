@@ -48,27 +48,36 @@ type OnChangeTarget = (target: number) => Promise<any>;
 
 export class MotorController {
   public element: HTMLElement;
+  private loader: HTMLElement;
+  private controls: HTMLElement;
+  private globalControls: HTMLElement;
   private error: HTMLElement;
 
   constructor() {
-    this.element = document.createElement('div');
-    this.element.className = 'motor-container';
+    this.element = document.getElementsByClassName(
+      'motor-container',
+    )[0] as HTMLElement;
 
     this.error = document.createElement('div');
     this.error.classList.add('motors-error');
-    this.error.classList.add('motors-error-hidden');
+
+    this.loader = document.createElement('div');
+    this.loader.classList.add('motors-loader');
+
+    this.controls = document.createElement('div');
 
     const client = new MotorClient();
     const singleViews = MotorNames.map((name) => {
       const view = new SingleMotorView(name);
-      this.element.appendChild(view.element);
       view.onChangeTarget = (target) => client.moveMotor(name, target);
       return view;
     });
+    for (const view of singleViews) {
+      this.controls.appendChild(view.element);
+    }
 
-    const controls = document.createElement('div');
-    controls.className = 'motors-controls';
-    this.element.appendChild(controls);
+    this.globalControls = document.createElement('div');
+    this.globalControls.className = 'motors-global-controls';
 
     const home = document.createElement('button');
     home.className = 'motors-home-button';
@@ -79,30 +88,56 @@ export class MotorController {
         await apiRequest(`move?motor=${motor}&pos=2048`);
       }
     });
-    controls.appendChild(home);
+    this.globalControls.appendChild(home);
+    this.controls.appendChild(this.globalControls);
 
     client.onStatus = (statuses: MotorStatuses) => {
+      this.showControls();
       MotorNames.forEach((name, idx) => {
         singleViews[idx].handleStatus(statuses[name]);
       });
     };
+    client.onDisconnect = (error: any) => this.showError('' + error);
+    client.onError = (error: any) => this.showError('' + error);
+
+    this.showLoader();
   }
 
-  showError(err: string | null) {
-    if (err == null) {
-      this.error.classList.add('motors-error-hidden');
-    } else {
-      this.error.classList.remove('motors-error-hidden');
-      this.error.textContent = err;
+  private showError(err: string) {
+    this.showElement(this.error);
+    this.error.textContent = err;
+  }
+
+  private showLoader() {
+    this.showElement(this.loader);
+  }
+
+  private showControls() {
+    this.showElement(this.controls);
+  }
+
+  private showElement(e: HTMLElement) {
+    for (const el of [this.loader, this.error, this.controls]) {
+      if (el == e) {
+        if (!el.parentNode) {
+          this.element.appendChild(el);
+        }
+      } else {
+        if (el.parentNode) {
+          this.element.removeChild(el);
+        }
+      }
     }
   }
 }
 
 class SingleMotorView {
+  public name: string;
   public element: HTMLElement;
   public currentLabel: HTMLLabelElement;
   public loadLabel: HTMLLabelElement;
   public onChangeTarget: OnChangeTarget = async (_) => null;
+  private torqueCheck: HTMLInputElement;
   private targetSlider: Slider;
   private stateSlider: Slider;
   private lastUserChange: number = -Infinity;
@@ -111,12 +146,20 @@ class SingleMotorView {
   private moveRequestInFlight = false;
 
   constructor(name: string) {
+    this.name = name;
+
     this.element = document.createElement('div');
     this.element.className = 'motor-single';
 
     const infoContainer = document.createElement('div');
     infoContainer.className = 'motor-info';
     this.element.appendChild(infoContainer);
+
+    this.torqueCheck = document.createElement('input');
+    this.torqueCheck.type = 'checkbox';
+    this.torqueCheck.className = 'motor-torque-checkbox';
+    this.setupTorqueCheck();
+    infoContainer.appendChild(this.torqueCheck);
 
     const nameLabel = document.createElement('label');
     nameLabel.className = 'motor-label-name';
@@ -159,14 +202,35 @@ class SingleMotorView {
   }
 
   handleStatus(status: MotorStatus) {
-    this.stateSlider.setValue(status.relativePos);
+    this.stateSlider.setValue(status.position, status.positionLimit);
     this.currentLabel.textContent = status.current.toFixed(1) + 'mA';
     this.loadLabel.textContent = status.load + '';
 
     // Only update the slider if the user hasn't touched it recently.
     if (performance.now() - this.lastUserChange > 5000) {
-      this.targetSlider.setValue(status.targetRelativePos);
+      this.targetSlider.setValue(status.targetPos, status.positionLimit);
+    } else {
+      this.targetSlider.setValue(
+        this.targetSlider.value(),
+        status.positionLimit,
+      );
     }
+  }
+
+  private setupTorqueCheck() {
+    const loadCls = 'motor-torque-checkbox-loading';
+    this.torqueCheck.classList.add(loadCls);
+    apiRequest<boolean[]>(`torque?motor=${this.name}`).then((value) => {
+      this.torqueCheck.classList.remove(loadCls);
+      this.torqueCheck.checked = value[0];
+    });
+    this.torqueCheck.addEventListener('input', () => {
+      this.torqueCheck.classList.add(loadCls);
+      const tv = this.torqueCheck.checked ? '1' : '0';
+      apiRequest<any>(`torque?motor=${this.name}&enabled=${tv}`).then((_) => {
+        this.torqueCheck.classList.remove(loadCls);
+      });
+    });
   }
 }
 
@@ -179,8 +243,8 @@ class Slider {
     this.slider = document.createElement('input');
     this.slider.type = 'range';
     this.slider.min = '0';
-    this.slider.max = '1';
-    this.slider.step = '0.001';
+    this.slider.max = '4095';
+    this.slider.step = '1';
     this.slider.className = clsName;
 
     this.element = document.createElement('div');
@@ -192,18 +256,20 @@ class Slider {
     this.element.appendChild(this.label);
 
     this.slider.addEventListener('input', () => this.updateLabel());
-    this.updateLabel();
   }
 
   private updateLabel() {
-    this.label.textContent = this.slider.valueAsNumber.toFixed(2);
+    const angle = (this.slider.valueAsNumber - 2048) * (360 / 4096);
+    this.label.textContent = Math.round(angle) + '°';
   }
 
   public value(): number {
     return this.slider.valueAsNumber;
   }
 
-  public setValue(value: number) {
+  public setValue(value: number, limit: PositionLimit) {
+    this.slider.min = '' + limit.min;
+    this.slider.max = '' + limit.max;
     this.slider.value = '' + value;
     this.updateLabel();
   }
@@ -228,9 +294,9 @@ class MotorClient {
     };
   }
 
-  async moveMotor(motor: string, relPos: number) {
+  async moveMotor(motor: string, pos: number) {
     await apiRequest(
-      `move?motor=${encodeURIComponent(motor)}&rel=${encodeURIComponent(relPos + '')}`,
+      `move?motor=${encodeURIComponent(motor)}&pos=${encodeURIComponent(pos + '')}`,
     );
   }
 }

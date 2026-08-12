@@ -183,6 +183,6 @@ func (c *CameraTrack) Metrics() *CameraTrackMetrics {
 }
 
 func (c *CameraTrack) LastError() error {
-	obj, _ := c.metrics.Load().(error)
+	obj, _ := c.lastError.Load().(error)
 	return obj
 }
