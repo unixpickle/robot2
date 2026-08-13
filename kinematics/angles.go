@@ -28,12 +28,12 @@ func AngleToPosition(theta float64) uint16 {
 // the 0 angle is determined by the calibration script, i.e. where the
 // arm is held straight upward.
 type MotorAngles struct {
-	ShoulderPan  float64
-	ShoulderLift float64
-	ElbowFlex    float64
-	WristFlex    float64
-	WristRoll    float64
-	Gripper      float64
+	ShoulderPan  float64 `json:"shoulder_pan"`
+	ShoulderLift float64 `json:"shoulder_lift"`
+	ElbowFlex    float64 `json:"elbow_flex"`
+	WristFlex    float64 `json:"wrist_flex"`
+	WristRoll    float64 `json:"wrist_roll"`
+	Gripper      float64 `json:"gripper"`
 }
 
 // MotorAnglesFromStatuses turns a motor state response into angles.

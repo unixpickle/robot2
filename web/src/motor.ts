@@ -83,10 +83,7 @@ export class MotorController {
     home.className = 'motors-home-button';
     home.textContent = 'Home';
     home.addEventListener('click', async () => {
-      const motors = await apiRequest<[string]>('names');
-      for (const motor of motors) {
-        await apiRequest(`move?motor=${motor}&pos=2048`);
-      }
+      await apiRequest('/kinematics/safehome');
     });
     this.globalControls.appendChild(home);
     this.controls.appendChild(this.globalControls);
@@ -220,14 +217,14 @@ class SingleMotorView {
   private setupTorqueCheck() {
     const loadCls = 'motor-torque-checkbox-loading';
     this.torqueCheck.classList.add(loadCls);
-    apiRequest<boolean[]>(`torque?motor=${this.name}`).then((value) => {
+    apiRequest<boolean>('/motor/torque', { motor: this.name }).then((value) => {
       this.torqueCheck.classList.remove(loadCls);
-      this.torqueCheck.checked = value[0];
+      this.torqueCheck.checked = value;
     });
     this.torqueCheck.addEventListener('input', () => {
       this.torqueCheck.classList.add(loadCls);
-      const tv = this.torqueCheck.checked ? '1' : '0';
-      apiRequest<any>(`torque?motor=${this.name}&enabled=${tv}`).then((_) => {
+      const req = { motor: this.name, enabled: this.torqueCheck.checked };
+      apiRequest<any>('/motor/settorque', req).then((_) => {
         this.torqueCheck.classList.remove(loadCls);
       });
     });
@@ -295,17 +292,14 @@ class MotorClient {
   }
 
   async moveMotor(motor: string, pos: number) {
-    await apiRequest(
-      `move?motor=${encodeURIComponent(motor)}&pos=${encodeURIComponent(pos + '')}`,
-    );
+    await apiRequest('/motor/move', { motor: motor, pos: pos });
   }
 }
 
 async function apiRequest<T>(path: string, payload?: any): Promise<T> {
   try {
-    const url = '/motor/' + path;
     const result = await fetch(
-      url,
+      path,
       payload
         ? {
             method: 'POST',

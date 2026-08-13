@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/unixpickle/robot2/camera"
+	"github.com/unixpickle/robot2/kinematics"
 	"github.com/unixpickle/robot2/motors"
 )
 
@@ -75,8 +76,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create motor controller: %s", err)
 	}
+	kinematicsController := kinematics.NewKinematicsController(motorController)
 	http.Handle("/camera/", http.StripPrefix("/camera", camController))
 	http.Handle("/motor/", http.StripPrefix("/motor", motorController))
+	http.Handle("/kinematics/", http.StripPrefix("/kinematics", kinematicsController))
 	http.Handle("/", http.FileServer(http.Dir(webDir)))
 
 	log.Printf("attempting to listen at %s...", addr)

@@ -124,6 +124,7 @@ func NewMotorController(conn *Connection, ids map[string]uint8) (*MotorControlle
 	mux.HandleFunc("/torque", w.handleTorque)
 	mux.HandleFunc("/settorque", w.handleSetTorque)
 	mux.HandleFunc("/move", w.handleMove)
+	mux.HandleFunc("/waituntilstill", w.handleWaitUntilStill)
 	mux.HandleFunc("/stream", w.handleStream)
 	mux.HandleFunc("/calibratecenter", w.handleCalibrateCenter)
 
@@ -138,6 +139,11 @@ func (m *MotorController) ServeHTTP(wr http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MotorController) handleNames(w http.ResponseWriter, r *http.Request) {
+	apiutil.ServeData(w, m.MotorNames())
+}
+
+// MotorNames gets the id-sorted list of motor names.
+func (m *MotorController) MotorNames() []string {
 	var names []string
 	var ids []uint8
 
@@ -149,11 +155,11 @@ func (m *MotorController) handleNames(w http.ResponseWriter, r *http.Request) {
 		return ids[i] < ids[j]
 	}, names)
 
-	apiutil.ServeData(w, names)
+	return names
 }
 
 func (m *MotorController) handleStatus(w http.ResponseWriter, r *http.Request) {
-	statuses, err := m.motorStatuses()
+	statuses, err := m.Status()
 	if err != nil {
 		apiutil.ServeError(w, err)
 	} else {
@@ -161,30 +167,47 @@ func (m *MotorController) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (m *MotorController) Status() (map[string]*AnnotatedStatus, error) {
+	statuses, err := m.conn.MotorStatuses(len(m.motorIDs))
+	if err != nil {
+		return nil, err
+	}
+	statusMap := map[string]*AnnotatedStatus{}
+	for k, v := range m.motorIDs {
+		statusMap[k] = m.annotatedStatus(statuses[v-1])
+	}
+	return statusMap, nil
+}
+
 func (m *MotorController) handleLimits(w http.ResponseWriter, r *http.Request) {
-	apiutil.ServeData(w, m.limits.Load().(map[string]MotorLimit))
+	apiutil.ServeData(w, m.Limits())
+}
+
+func (m *MotorController) Limits() map[string]MotorLimit {
+	return m.limits.Load().(map[string]MotorLimit)
 }
 
 func (m *MotorController) handleSetLimits(w http.ResponseWriter, r *http.Request) {
 	apiutil.ServeAPI(w, r, func(newLimits map[string]MotorLimit) (bool, error) {
-		if err := m.changeLimits(newLimits); err != nil {
+		if err := m.SetLimits(newLimits); err != nil {
 			return false, err
 		} else {
-			m.delayRelax()
 			return true, nil
 		}
 	})
 }
 
-func (m *MotorController) changeLimits(limits map[string]MotorLimit) error {
+func (m *MotorController) SetLimits(limits map[string]MotorLimit) error {
 	m.changeLimitsLock.Lock()
 	defer m.changeLimitsLock.Unlock()
+	m.delayRelax()
 	for name, limit := range limits {
 		if id, ok := m.motorIDs[name]; !ok {
 			return errUnknownMotor
 		} else if err := m.conn.SetPositionLimit(id, limit.Min, limit.Max); err != nil {
 			return err
 		}
+		m.delayRelax()
 	}
 	m.limits.Store(limits)
 	return nil
@@ -226,12 +249,7 @@ func (m *MotorController) handleSetTorque(w http.ResponseWriter, r *http.Request
 
 func (m *MotorController) handleMove(w http.ResponseWriter, r *http.Request) {
 	apiutil.ServeAPI(w, r, func(body MoveRequest) (bool, error) {
-		motorID, ok := m.motorIDs[body.Motor]
-		if !ok {
-			return false, errUnknownMotor
-		}
-		m.delayRelax()
-		if err := m.changeTarget(motorID, body.Pos); err != nil {
+		if err := m.Move(body.Motor, body.Pos); err != nil {
 			return false, err
 		} else {
 			return true, nil
@@ -239,14 +257,55 @@ func (m *MotorController) handleMove(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (m *MotorController) changeTarget(motorID uint8, target uint16) error {
+func (m *MotorController) Move(motor string, target uint16) error {
+	motorID, ok := m.motorIDs[motor]
+	if !ok {
+		return errUnknownMotor
+	}
+
 	m.changeTargetLock.Lock()
 	defer m.changeTargetLock.Unlock()
+	m.delayRelax()
 	if err := m.conn.SetPosition(motorID, target, 300, 10); err != nil {
 		return err
 	}
 	m.targets.Store(motorID, target)
+	m.delayRelax()
 	return nil
+}
+
+func (m *MotorController) handleWaitUntilStill(w http.ResponseWriter, r *http.Request) {
+	if err := m.WaitUntilStill(r.Context()); err != nil {
+		apiutil.ServeError(w, err)
+	} else {
+		apiutil.ServeData(w, true)
+	}
+}
+
+func (m *MotorController) WaitUntilStill(ctx context.Context) error {
+	// Make sure any enqueued movements are started in the first place.
+	time.Sleep(time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		statuses, err := m.Status()
+		if err != nil {
+			return err
+		}
+		allDone := true
+		for _, s := range statuses {
+			if s.IsMoving() {
+				allDone = false
+			}
+		}
+		if allDone {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
 }
 
 func (m *MotorController) handleStream(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +378,7 @@ func (m *MotorController) listenToStatuses(ctx context.Context) <-chan map[strin
 
 func (m *MotorController) stateLoop() {
 	for {
-		statuses, err := m.motorStatuses()
+		statuses, err := m.Status()
 		if err != nil {
 			log.Println("error in motor status loop:", err)
 			time.Sleep(time.Second * 30)
@@ -378,16 +437,4 @@ func (m *MotorController) relax() error {
 		}
 	}
 	return nil
-}
-
-func (m *MotorController) motorStatuses() (map[string]*AnnotatedStatus, error) {
-	statuses, err := m.conn.MotorStatuses(len(m.motorIDs))
-	if err != nil {
-		return nil, err
-	}
-	statusMap := map[string]*AnnotatedStatus{}
-	for k, v := range m.motorIDs {
-		statusMap[k] = m.annotatedStatus(statuses[v-1])
-	}
-	return statusMap, nil
 }
