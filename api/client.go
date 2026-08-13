@@ -47,7 +47,7 @@ func NewClient(baseURL *url.URL) *Client {
 
 func (c *Client) MotorNames() ([]string, error) {
 	var result []string
-	if err := c.doRequest("/motor/names", "", nil, &result); err != nil {
+	if err := c.doRequest("/motor/names", nil, &result); err != nil {
 		return nil, fmt.Errorf("get motor names: %w", err)
 	}
 	return result, nil
@@ -55,7 +55,7 @@ func (c *Client) MotorNames() ([]string, error) {
 
 func (c *Client) MotorStatuses() (map[string]*motors.AnnotatedStatus, error) {
 	var result map[string]*motors.AnnotatedStatus
-	if err := c.doRequest("/motor/status", "", nil, &result); err != nil {
+	if err := c.doRequest("/motor/status", nil, &result); err != nil {
 		return nil, fmt.Errorf("get motor statuses: %w", err)
 	}
 	return result, nil
@@ -137,7 +137,7 @@ func (c *Client) StreamStatuses(ctx context.Context) (
 }
 
 func (c *Client) CalibrateCenter() error {
-	if err := c.doRequest("/motor/calibratecenter", "", nil, nil); err != nil {
+	if err := c.doRequest("/motor/calibratecenter", nil, nil); err != nil {
 		return fmt.Errorf("calibrate center: %w", err)
 	}
 	return nil
@@ -145,33 +145,38 @@ func (c *Client) CalibrateCenter() error {
 
 func (c *Client) Limits() (map[string]motors.MotorLimit, error) {
 	var result map[string]motors.MotorLimit
-	if err := c.doRequest("/motor/limits", "", nil, &result); err != nil {
+	if err := c.doRequest("/motor/limits", nil, &result); err != nil {
 		return nil, fmt.Errorf("get limits: %w", err)
 	}
 	return result, nil
 }
 
 func (c *Client) SetLimits(limits map[string]motors.MotorLimit) error {
-	if err := c.doRequest("/motor/setlimits", "", limits, nil); err != nil {
+	if err := c.doRequest("/motor/setlimits", limits, nil); err != nil {
 		return fmt.Errorf("set limits: %w", err)
 	}
 	return nil
 }
 
-func (c *Client) SetTorqueEnabled(enabled bool) error {
-	flag := "0"
-	if enabled {
-		flag = "1"
-	}
-	if err := c.doRequest("/motor/torque", "enabled="+flag, nil, nil); err != nil {
+func (c *Client) SetTorqueEnabledAll(enabled bool) error {
+	body := motors.SetTorqueRequest{Enabled: enabled}
+	if err := c.doRequest("/motor/settorque", body, nil); err != nil {
 		return fmt.Errorf("set torque enabled: %w", err)
 	}
 	return nil
 }
 
-func (c *Client) Move(motor string, pos int16) error {
-	q := fmt.Sprintf("motor=%s&pos=%d", motor, pos)
-	if err := c.doRequest("/motor/move", q, nil, nil); err != nil {
+func (c *Client) SetTorqueEnabled(motor string, enabled bool) error {
+	body := motors.SetTorqueRequest{Motor: &motor, Enabled: enabled}
+	if err := c.doRequest("/motor/settorque", body, nil); err != nil {
+		return fmt.Errorf("set torque enabled: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) Move(motor string, pos uint16) error {
+	body := motors.MoveRequest{Motor: motor, Pos: pos}
+	if err := c.doRequest("/motor/move", body, nil); err != nil {
 		return fmt.Errorf("set torque enabled: %w", err)
 	}
 	return nil
@@ -197,10 +202,9 @@ func (c *Client) WaitUntilStill() error {
 	}
 }
 
-func (c *Client) doRequest(path, query string, objIn, objOut any) error {
+func (c *Client) doRequest(path string, objIn, objOut any) error {
 	u := c.baseURL
 	u.Path = path
-	u.RawQuery = query
 
 	var body io.Reader
 	var method string

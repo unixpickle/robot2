@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"math"
 	"net/http"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +25,11 @@ var DefaultMotorIDs = map[string]uint8{
 	"wrist_flex":    4,
 	"wrist_roll":    5,
 	"gripper":       6,
+}
+
+var errUnknownMotor = &apiutil.WebError{
+	Message: "unknown motor ID was specified",
+	Code:    http.StatusBadRequest,
 }
 
 type statusListener struct {
@@ -119,8 +122,8 @@ func NewMotorController(conn *Connection, ids map[string]uint8) (*MotorControlle
 	mux.HandleFunc("/limits", w.handleLimits)
 	mux.HandleFunc("/setlimits", w.handleSetLimits)
 	mux.HandleFunc("/torque", w.handleTorque)
+	mux.HandleFunc("/settorque", w.handleSetTorque)
 	mux.HandleFunc("/move", w.handleMove)
-	mux.HandleFunc("/moverel", w.handleMove)
 	mux.HandleFunc("/stream", w.handleStream)
 	mux.HandleFunc("/calibratecenter", w.handleCalibrateCenter)
 
@@ -163,103 +166,77 @@ func (m *MotorController) handleLimits(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MotorController) handleSetLimits(w http.ResponseWriter, r *http.Request) {
-	var results map[string]MotorLimit
-	if err := json.NewDecoder(r.Body).Decode(&results); err != nil {
-		apiutil.ServeError(w, err)
-		return
-	}
-	if err := m.changeLimits(results); err != nil {
-		apiutil.ServeError(w, err)
-	} else {
-		m.delayRelax()
-		apiutil.ServeData(w, true)
-	}
+	apiutil.ServeAPI(w, r, func(newLimits map[string]MotorLimit) (bool, error) {
+		if err := m.changeLimits(newLimits); err != nil {
+			return false, err
+		} else {
+			m.delayRelax()
+			return true, nil
+		}
+	})
 }
 
-func (m *MotorController) changeLimits(results map[string]MotorLimit) error {
+func (m *MotorController) changeLimits(limits map[string]MotorLimit) error {
 	m.changeLimitsLock.Lock()
 	defer m.changeLimitsLock.Unlock()
-	for name, limit := range results {
+	for name, limit := range limits {
 		if id, ok := m.motorIDs[name]; !ok {
-			return &apiutil.WebError{Message: "unknown motor ID", Code: http.StatusBadRequest}
+			return errUnknownMotor
 		} else if err := m.conn.SetPositionLimit(id, limit.Min, limit.Max); err != nil {
 			return err
 		}
 	}
-	m.limits.Store(results)
+	m.limits.Store(limits)
 	return nil
 }
 
 func (m *MotorController) handleTorque(w http.ResponseWriter, r *http.Request) {
-	var ids []uint8
-	if r.FormValue("motor") == "" {
-		for _, id := range m.motorIDs {
-			ids = append(ids, id)
+	apiutil.ServeAPI(w, r, func(body TorqueRequest) (bool, error) {
+		motorID, ok := m.motorIDs[body.Motor]
+		if !ok {
+			return false, errUnknownMotor
 		}
-	} else {
-		motorID, _, err := m.motorIDFromRequest(r)
-		if err != nil {
-			apiutil.ServeError(w, err)
-			return
-		}
-		ids = []uint8{motorID}
-	}
-	enabled := r.FormValue("enabled")
-	if enabled == "" {
-		var results []bool
-		for _, id := range ids {
-			flag, err := m.conn.TorqueEnabled(id)
-			if err != nil {
-				apiutil.ServeError(w, err)
-				return
+		return m.conn.TorqueEnabled(motorID)
+	})
+}
+
+func (m *MotorController) handleSetTorque(w http.ResponseWriter, r *http.Request) {
+	apiutil.ServeAPI(w, r, func(body SetTorqueRequest) (bool, error) {
+		if body.Motor != nil {
+			motorID, ok := m.motorIDs[*body.Motor]
+			if !ok {
+				return false, errUnknownMotor
 			}
-			results = append(results, flag)
-		}
-		apiutil.ServeData(w, results)
-	} else {
-		m.delayRelax()
-		for _, id := range ids {
-			if err := m.conn.SetTorqueEnabled(id, enabled == "1"); err != nil {
-				apiutil.ServeError(w, err)
-				return
+			m.delayRelax()
+			if err := m.conn.SetTorqueEnabled(motorID, body.Enabled); err != nil {
+				return false, err
 			}
+			return true, nil
+		} else {
+			for _, id := range m.motorIDs {
+				m.delayRelax()
+				if err := m.conn.SetTorqueEnabled(id, body.Enabled); err != nil {
+					return false, err
+				}
+			}
+			return true, nil
 		}
-		apiutil.ServeData(w, true)
-	}
+	})
 }
 
 func (m *MotorController) handleMove(w http.ResponseWriter, r *http.Request) {
-	motorID, motorName, err := m.motorIDFromRequest(r)
-	if err != nil {
-		apiutil.ServeError(w, err)
-		return
-	}
-
-	// Allow both relative and absolute positioning for a motor, which currently
-	// leads to some unpleasant looking code.
-	rawPos := r.FormValue("pos")
-	parsedPos, err := strconv.Atoi(rawPos)
-	pos := uint16(parsedPos)
-	if err != nil {
-		relPos := r.FormValue("rel")
-		relPosValue, err := strconv.ParseFloat(relPos, 64)
-		if err != nil {
-			apiutil.ServeError(
-				w,
-				&apiutil.WebError{Message: "invalid position", Code: http.StatusBadRequest},
-			)
-			return
+	apiutil.ServeAPI(w, r, func(body MoveRequest) (bool, error) {
+		motorID, ok := m.motorIDs[body.Motor]
+		if !ok {
+			return false, errUnknownMotor
 		}
-		limit := m.limits.Load().(map[string]MotorLimit)[motorName]
-		pos = limit.Min + uint16(math.Round(relPosValue*float64(limit.Max-limit.Min)))
-	}
-
-	if err := m.changeTarget(motorID, pos); err != nil {
-		apiutil.ServeError(w, err)
-	} else {
 		m.delayRelax()
-		apiutil.ServeData(w, true)
-	}
+		if err := m.changeTarget(motorID, body.Pos); err != nil {
+			return false, err
+		} else {
+			return true, nil
+		}
+	})
 }
 
 func (m *MotorController) changeTarget(motorID uint8, target uint16) error {
@@ -300,17 +277,6 @@ func (m *MotorController) handleCalibrateCenter(w http.ResponseWriter, r *http.R
 		}
 	}
 	apiutil.ServeData(w, true)
-}
-
-func (m *MotorController) motorIDFromRequest(r *http.Request) (uint8, string, error) {
-	name := r.FormValue("motor")
-	if name == "" {
-		return 0, name, &apiutil.WebError{Message: "must specify a motor", Code: http.StatusBadRequest}
-	}
-	if id, ok := m.motorIDs[name]; ok {
-		return id, name, nil
-	}
-	return 0, name, &apiutil.WebError{Message: "unknown motor ID was specified", Code: http.StatusBadRequest}
 }
 
 func (m *MotorController) annotatedStatus(status *MotorStatus) *AnnotatedStatus {

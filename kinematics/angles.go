@@ -14,14 +14,14 @@ func PositionToAngle(pos int16) float64 {
 
 // AngleToPosition is the inverse of PositionToAngle, with extra
 // coverage for angles outside of [-pi, pi].
-func AngleToPosition(theta float64) int16 {
+func AngleToPosition(theta float64) uint16 {
 	for theta < -math.Pi {
 		theta += math.Pi * 2
 	}
 	for theta > math.Pi {
 		theta -= math.Pi * 2
 	}
-	return int16(math.Max(0, math.Min(4095, 2048+theta*2048/math.Pi)))
+	return uint16(math.Max(0, math.Min(4095, 2048+theta*2048/math.Pi)))
 }
 
 // MotorAngles stores the angle of each motor in radians, assuming that

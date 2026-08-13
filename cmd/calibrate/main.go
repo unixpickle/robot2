@@ -20,8 +20,8 @@ func main() {
 	client, err := parseClient()
 	essentials.Must(err)
 
-	essentials.Must(client.SetTorqueEnabled(false))
-	defer client.SetTorqueEnabled(true)
+	essentials.Must(client.SetTorqueEnabledAll(false))
+	defer client.SetTorqueEnabledAll(true)
 
 	fmt.Println("Move the joints such that:")
 	fmt.Println(" * The shoulder pan is pointed towards the front center.")
