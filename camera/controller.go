@@ -45,6 +45,7 @@ func NewCameraController(tracks []*CameraTrack, sessionTimeout time.Duration) *C
 		mux:      mux,
 	}
 
+	mux.HandleFunc("/tracknames", w.handleTrackNames)
 	mux.HandleFunc("/connect", w.handleConnect)
 	mux.HandleFunc("/disconnect", w.handleDisconnect)
 	mux.HandleFunc("/icecandidates", w.handleICECandidates)
@@ -61,6 +62,14 @@ func (w *CameraController) ServeHTTP(wr http.ResponseWriter, r *http.Request) {
 	w.mux.ServeHTTP(wr, r)
 }
 
+func (w *CameraController) handleTrackNames(wr http.ResponseWriter, r *http.Request) {
+	var names []string
+	for _, track := range w.tracks {
+		names = append(names, track.Name)
+	}
+	apiutil.ServeData(wr, names)
+}
+
 func (w *CameraController) trackFromRequest(r *http.Request) (*CameraTrack, error) {
 	trackID := r.FormValue("track")
 	if trackID == "" {
@@ -68,7 +77,10 @@ func (w *CameraController) trackFromRequest(r *http.Request) (*CameraTrack, erro
 			Track string `json:"track"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			return nil, &apiutil.WebError{Code: http.StatusBadRequest, Message: err.Error()}
+			return nil, &apiutil.WebError{
+				Code:    http.StatusBadRequest,
+				Message: "failed to read track name from request body: " + err.Error(),
+			}
 		}
 		trackID = payload.Track
 	}

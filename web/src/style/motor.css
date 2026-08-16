@@ -123,3 +123,7 @@
   background: transparent;
   cursor: pointer;
 }
+
+.motors-global-controls {
+  text-align: center;
+}
