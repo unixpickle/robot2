@@ -170,10 +170,9 @@ class CameraRTCConnection {
 
   public async connect() {
     try {
-      const created: ConnectResponse = await this.apiRequest(
-        `connect?track=${encodeURIComponent(this.track)}`,
-        { track: this.track },
-      );
+      const created: ConnectResponse = await this.apiRequest(`connect`, {
+        track: this.track,
+      });
       this.session = created.session;
       this.pc.addEventListener('icecandidate', (event) => {
         const candidates = event.candidate ? [event.candidate] : [];

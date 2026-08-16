@@ -4,14 +4,10 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"math"
 	"math/rand/v2"
-	"os"
-	"path/filepath"
 	"slices"
 	"time"
 
@@ -117,10 +113,25 @@ func main() {
 			continue
 		}
 
-		log.Printf("trying point (%f, %f), gripper angle %f", xy.X, xy.Y, gripperAngle)
+		log.Printf("Trying point (%f, %f), gripper angle %f", xy.X, xy.Y, gripperAngle)
+
+		log.Println(" - starting camera recordings...")
+		recording, err := NewRecording(outputDir)
+		essentials.Must(err)
+		var recorders []*api.CameraRecorder
+		for _, trackName := range cameraTracks {
+			r, err := client.RecordCamera(recording.VideoPath(trackName), trackName, 30)
+			essentials.Must(err)
+			recorders = append(recorders, r)
+		}
+		// Allow the first keyframe to come in.
+		time.Sleep(time.Second)
+
+		log.Println(" - moving to initial position...")
 		essentials.Must(client.MoveAngles(angles))
 		essentials.Must(client.WaitUntilStill())
 
+		log.Println(" - lowering...")
 		stat, err := client.MotorStatuses()
 		essentials.Must(err)
 		startShoulderLoad := stat["shoulder_lift"].Load
@@ -139,7 +150,7 @@ func main() {
 			essentials.Must(err)
 			elbowLoad := stat["elbow_flex"].Load
 			shoulderLoad := stat["shoulder_lift"].Load
-			log.Printf(" - at z %f, elbow load %f, shoulder load %f", z, elbowLoad, shoulderLoad)
+			log.Printf("   * at z %.02f, elbow load %.01f, shoulder load %.02f", z, elbowLoad, shoulderLoad)
 			if elbowLoad < minElbowLoad ||
 				(shoulderLoad < minShoulderLoad && shoulderLoad < startShoulderLoad+relShoulderLoad) {
 				break
@@ -151,54 +162,45 @@ func main() {
 		relax(client, tableBuffer)
 
 		translation := model2d.XY(-math.Sin(gripperAngle), math.Cos(gripperAngle)).Scale(-insetDistance)
-		log.Printf("- translation during raise: %#v", translation)
 		undoRaise := openAndRaise(client, gripperRelease, zDelta, liftAmount, translation)
 
-		// Home before picture
 		log.Println(" - homing...")
 		essentials.Must(client.HomeSafely())
 
-		log.Println(" - capturing data...")
-		trackImages := map[string][]byte{}
+		log.Println(" - recording snapshots and data...")
 		for _, name := range cameraTracks {
 			img, err := client.Snapshot(name)
 			essentials.Must(essentials.AddCtx("capture snapshot", err))
-			trackImages[name] = img
+			essentials.Must(recording.WriteImage(name, img))
 		}
-		ts := time.Now().Local()
+		essentials.Must(recording.WriteJSON("state", stat))
+		essentials.Must(recording.WriteJSON("found_point", foundPoint))
+		essentials.Must(recording.WriteJSON("target", map[string]any{"Coord": xy, "Gripper": gripperAngle}))
 
-		log.Println("- attempting re-grip of cube...")
+		log.Println(" - attempting re-grip of cube...")
 		undoRaise()
 		essentials.Must(client.Move("gripper", kinematics.AngleToPosition(gripperGrasp)))
 		essentials.Must(client.WaitUntilStill())
+
+		log.Println(" - homing after trajectory...")
+		essentials.Must(client.HomeSafely())
+
+		// Hopefully allow video to catch up.
+		time.Sleep(time.Second)
+		for _, recorder := range recorders {
+			essentials.Must(recorder.Stop())
+		}
+
 		closedAngles, err := client.CurrentAngles()
 		essentials.Must(err)
-		log.Printf("- regrasp angle: %f", closedAngles.Gripper)
+		log.Printf(" - regrasp angle: %f", closedAngles.Gripper)
 		if closedAngles.Gripper < regraspThreshold {
+			essentials.Must(recording.MarkSuccessful(false))
 			log.Println("failed to re-grasp")
 			break
+		} else {
+			essentials.Must(recording.MarkSuccessful(true))
 		}
-
-		outDir := filepath.Join(
-			outputDir,
-			fmt.Sprintf("%04d-%02d-%02d-%02d%02d%02d", ts.Year(), ts.Month(), ts.Day(), ts.Hour(), ts.Minute(), ts.Second()),
-		)
-		essentials.Must(os.MkdirAll(outDir, 0755))
-		for name, img := range trackImages {
-			essentials.Must(os.WriteFile(filepath.Join(outDir, name+".jpg"), img, 0644))
-		}
-		stateData, err := json.Marshal(stat)
-		essentials.Must(err)
-		essentials.Must(os.WriteFile(filepath.Join(outDir, "state.json"), stateData, 0644))
-		posData, err := json.Marshal(foundPoint)
-		essentials.Must(err)
-		essentials.Must(os.WriteFile(filepath.Join(outDir, "found_point.json"), posData, 0644))
-		targetData, err := json.Marshal(map[string]any{"x": xy.X, "y": xy.Y, "gripper": gripperAngle})
-		essentials.Must(err)
-		essentials.Must(os.WriteFile(filepath.Join(outDir, "target.json"), targetData, 0644))
-
-		log.Println(" - homing after successful trajectory...")
-		essentials.Must(client.HomeSafely())
 	}
 }
 

@@ -39,8 +39,13 @@ func NewClient(baseURL *url.URL) *Client {
 }
 
 func (c *Client) doRequest(path string, objIn, objOut any) error {
+	return c.doRequestWithQuery(path, "", objIn, objOut)
+}
+
+func (c *Client) doRequestWithQuery(path, query string, objIn, objOut any) error {
 	u := c.baseURL
 	u.Path = path
+	u.RawQuery = query
 
 	var body io.Reader
 	var method string

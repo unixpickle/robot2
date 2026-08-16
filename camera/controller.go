@@ -71,19 +71,16 @@ func (w *CameraController) handleTrackNames(wr http.ResponseWriter, r *http.Requ
 }
 
 func (w *CameraController) trackFromRequest(r *http.Request) (*CameraTrack, error) {
-	trackID := r.FormValue("track")
-	if trackID == "" {
-		var payload struct {
-			Track string `json:"track"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			return nil, &apiutil.WebError{
-				Code:    http.StatusBadRequest,
-				Message: "failed to read track name from request body: " + err.Error(),
-			}
-		}
-		trackID = payload.Track
+	var payload struct {
+		Track string `json:"track"`
 	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		return nil, &apiutil.WebError{
+			Code:    http.StatusBadRequest,
+			Message: "failed to read track name from request body: " + err.Error(),
+		}
+	}
+	trackID := payload.Track
 	if trackID == "" {
 		return nil, errMissingTrack
 	}
