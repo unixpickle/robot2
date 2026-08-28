@@ -27,10 +27,12 @@ type cameraTrackWaiter struct {
 }
 
 type CameraTrack struct {
-	Name      string
-	Track     *webrtc.TrackLocalStaticSample
-	metrics   atomic.Value // contains a *CameraTrackMetrics
-	lastError atomic.Value // contains error or nil
+	Name    string
+	Track   *webrtc.TrackLocalStaticSample
+	metrics atomic.Value // contains a *CameraTrackMetrics
+
+	firstErrorLock sync.RWMutex
+	firstError     error
 
 	waitersLock sync.Mutex
 	waiters     []*cameraTrackWaiter
@@ -94,12 +96,18 @@ func NewCameraTrack(cam Camera, name string, ctx context.Context) (*CameraTrack,
 		for {
 			sample, err := encoder.ReadFrame()
 			if err != nil {
+				result.recordError(err)
 				return
 			}
-			frame := <-frames
+			frame, ok := <-frames
+			if !ok {
+				// For some reason, the transcoder produced an extra sample.
+				return
+			}
 			if prevFrame != nil {
 				duration := frame.Time.Sub(prevFrame.Time)
 				if err := track.WriteSample(media.Sample{Data: prevSample, Duration: duration}); err != nil {
+					result.recordError(err)
 					return
 				}
 
@@ -124,7 +132,11 @@ func (c *CameraTrack) recordError(err error) {
 	// Store the error before notifying the waiters to avoid a race
 	// where a waiter doesn't see the error at first but also doesn't
 	// get notified when the error comes in.
-	c.lastError.Store(err)
+	c.firstErrorLock.Lock()
+	if c.firstError == nil {
+		c.firstError = err
+	}
+	c.firstErrorLock.Unlock()
 
 	c.waitersLock.Lock()
 	defer c.waitersLock.Unlock()
@@ -152,7 +164,7 @@ func (c *CameraTrack) Wait(ctx context.Context) (*Frame, error) {
 	c.waitersLock.Lock()
 	// Check for error after acquiring lock to match the order
 	// in recordError.
-	if err := c.LastError(); err != nil {
+	if err := c.FirstError(); err != nil {
 		c.waitersLock.Unlock()
 		return nil, err
 	}
@@ -179,10 +191,12 @@ func (c *CameraTrack) Wait(ctx context.Context) (*Frame, error) {
 }
 
 func (c *CameraTrack) Metrics() *CameraTrackMetrics {
-	return c.metrics.Load().(*CameraTrackMetrics)
+	result, _ := c.metrics.Load().(*CameraTrackMetrics)
+	return result
 }
 
-func (c *CameraTrack) LastError() error {
-	obj, _ := c.lastError.Load().(error)
-	return obj
+func (c *CameraTrack) FirstError() error {
+	c.firstErrorLock.RLock()
+	defer c.firstErrorLock.RUnlock()
+	return c.firstError
 }

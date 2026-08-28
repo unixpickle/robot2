@@ -28,11 +28,16 @@ type V4L2Camera struct {
 	err     error
 }
 
-func NewV4L2Camera(path string) (*V4L2Camera, error) {
+func NewV4L2Camera(path string) (result *V4L2Camera, err error) {
 	wc, err := webcam.Open(path)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			wc.Close()
+		}
+	}()
 	formats := wc.GetSupportedFormats()
 	if _, ok := formats[pixelFormatMJPG]; !ok {
 		return nil, errors.New("only MJPG is supported, but it is not available for camera: " + path)

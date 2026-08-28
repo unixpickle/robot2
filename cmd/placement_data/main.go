@@ -92,10 +92,15 @@ func main() {
 		for _, z := range []float64{lowerer.StartHeight, lowerer.EndHeight} {
 			centerPos := model3d.XYZ(xy.X, xy.Y, z)
 			angles := kinematics.HoverPositionToCoordAngles(min, max, centerPos, gripperAngle)
+			if angles == nil {
+				canReach = false
+				break
+			}
 			endCoords := kinematics.AnglesToCoords(angles)
 			dist := endCoords.Mid().Dist(centerPos)
 			if dist > 2 {
 				canReach = false
+				break
 			}
 		}
 		if !canReach {

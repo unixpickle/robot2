@@ -43,14 +43,6 @@ func main() {
 	if err != nil {
 		log.Fatalln("failed to connect to motors:", err)
 	}
-	log.Println("getting motor statuses...")
-	statuses, err := motorConn.MotorStatuses(6)
-	if err != nil {
-		log.Fatalln("failed to get motor statuses:", err)
-	}
-	for i, status := range statuses {
-		log.Printf("motor %d initial status: %s", i, status)
-	}
 
 	log.Println("opening cameras...")
 	var tracks []*camera.CameraTrack

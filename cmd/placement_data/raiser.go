@@ -44,6 +44,9 @@ func (r *Raiser) OpenAndRaise(
 
 	// First, open gripper
 	angles = kinematics.HoverPositionToCoordAngles(min, max, startPos, startRelativeWristRoll)
+	if angles == nil {
+		panic("IK failed")
+	}
 	angles.Gripper = r.GripperRelease
 	if err := c.MoveAngles(angles); err != nil {
 		return nil, err
@@ -67,6 +70,9 @@ func (r *Raiser) OpenAndRaise(
 		pos.Y += frac * translation.Y
 
 		angles = kinematics.HoverPositionToCoordAngles(min, max, pos, startRelativeWristRoll)
+		if angles == nil {
+			panic("IK failed")
+		}
 		angles.Gripper = r.GripperRelease
 		if err := c.MoveAngles(angles); err != nil {
 			return nil, err

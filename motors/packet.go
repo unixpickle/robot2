@@ -85,6 +85,9 @@ func encodeInstruction(id uint8, inst instructionType, params []any) []byte {
 //
 // The id and errFlags may be nil if they are not needed by the caller.
 func decodeResponse(data []byte, id *uint8, errFlags *ErrorFlags, params []any) error {
+	if len(data) < 5 {
+		return errors.New("underflow in serial packet")
+	}
 	if data[0] != 0xff || data[1] != 0xff {
 		return errors.New("packet is missing 0xffff header")
 	}

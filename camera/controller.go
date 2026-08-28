@@ -94,7 +94,7 @@ func (w *CameraController) trackFromRequest(r *http.Request) (*CameraTrack, erro
 	if track == nil {
 		return nil, errTrackNotFound
 	}
-	if err := track.LastError(); err != nil {
+	if err := track.FirstError(); err != nil {
 		return nil, fmt.Errorf("track is inaccessible due to error: %w", err)
 	}
 	return track, nil
@@ -153,14 +153,14 @@ func (w *CameraController) handleStatus(wr http.ResponseWriter, r *http.Request)
 	obj := map[string]any{}
 	for _, t := range w.tracks {
 		var cameraInfo struct {
-			Metrics   *CameraTrackMetrics `json:"metrics"`
-			LastError *string             `json:"lastError"`
+			Metrics    *CameraTrackMetrics `json:"metrics"`
+			FirstError *string             `json:"firstError"`
 		}
 		cameraInfo.Metrics = t.Metrics()
-		if err := t.LastError(); err != nil {
+		if err := t.FirstError(); err != nil {
 			errMsg := new(string)
 			*errMsg = err.Error()
-			cameraInfo.LastError = errMsg
+			cameraInfo.FirstError = errMsg
 		}
 		obj[t.Name] = cameraInfo
 	}

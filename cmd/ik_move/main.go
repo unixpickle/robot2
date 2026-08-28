@@ -53,6 +53,9 @@ func main() {
 		min, max, err := client.LimitsAngles()
 		essentials.Must(err)
 		angles = kinematics.HoverPositionToCoordAngles(min, max, centerPos, 0)
+		if angles == nil {
+			log.Fatal("IK failed for point")
+		}
 		endCoords := kinematics.AnglesToCoords(angles)
 		log.Printf("solved: distance %f", endCoords.Mid().Dist(centerPos))
 	}

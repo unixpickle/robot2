@@ -84,27 +84,3 @@ func (m *MotorAngles) Copy() *MotorAngles {
 	res := *m
 	return &res
 }
-
-func (m *MotorAngles) Add(m1 *MotorAngles) {
-	v := m.Vec()
-	for i, x := range m1.Vec() {
-		v[i] += x
-	}
-	m.SetVec(v)
-}
-
-func (m *MotorAngles) Sub(m1 *MotorAngles) {
-	v := m.Vec()
-	for i, x := range m1.Vec() {
-		v[i] -= x
-	}
-	m.SetVec(v)
-}
-
-func (m *MotorAngles) Scale(s float64) {
-	v := m.Vec()
-	for i, x := range m.Vec() {
-		v[i] *= x * s
-	}
-	m.SetVec(v)
-}

@@ -62,6 +62,9 @@ func main() {
 			}
 			centerPos := model3d.XYZ(x, y, maxZ)
 			angles := kinematics.HoverPositionToCoordAngles(min, max, centerPos, 0)
+			if angles == nil {
+				continue
+			}
 			endCoords := kinematics.AnglesToCoords(angles)
 			dist := endCoords.Mid().Dist(centerPos)
 			if dist > 2 {
@@ -83,6 +86,9 @@ func main() {
 		for z := maxZ; z > minZ; z -= zDelta {
 			centerPos.Z = z
 			angles = kinematics.HoverPositionToCoordAngles(min, max, centerPos, 0)
+			if angles == nil {
+				essentials.Die("IK failed during lower")
+			}
 			essentials.Must(client.MoveAngles(angles))
 			essentials.Must(client.WaitUntilStill())
 			state, err := client.CurrentAngles()

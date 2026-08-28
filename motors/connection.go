@@ -70,18 +70,6 @@ func (c *Connection) MotorStatus(id uint8) (*MotorStatus, error) {
 	return decodeMotorStatus(response)
 }
 
-func (c *Connection) MotorStatuses(count int) ([]*MotorStatus, error) {
-	var results []*MotorStatus
-	for i := 1; i <= count; i++ {
-		if status, err := c.MotorStatus(uint8(i)); err != nil {
-			return nil, fmt.Errorf("get status for motor %d failed: %w", i, err)
-		} else {
-			results = append(results, status)
-		}
-	}
-	return results, nil
-}
-
 // SetOverloadProtection configures the overload protection system.
 // The threshold is a torque percentage from 0 to 100 (80 is standard).
 // The delay is the time before protection kicks in during overload.

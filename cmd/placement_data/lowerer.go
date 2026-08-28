@@ -39,6 +39,9 @@ func (l *Lowerer) Lower(
 	for i := 0; i <= l.Steps; i++ {
 		p := model3d.XYZ(centerPos.X, centerPos.Y, z+delta*float64(l.Steps-i))
 		angles := kinematics.HoverPositionToCoordAngles(min, max, p, gripperAngle)
+		if angles == nil {
+			panic("IK failed")
+		}
 		if err := c.MoveAngles(angles); err != nil {
 			return model3d.Coord3D{}, err
 		}

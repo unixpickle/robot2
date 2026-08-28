@@ -54,7 +54,7 @@ func PlanSafeHome(min, max *MotorAngles, start *MotorAngles) []*MotorAngles {
 			if !isValid(&c) {
 				continue
 			}
-			z := AnglesToCoords(&curPos).Min().Z
+			z := AnglesToCoords(&c).Min().Z
 			if z > highestZ {
 				highestZ = z
 				best = c

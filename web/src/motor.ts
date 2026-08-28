@@ -284,7 +284,7 @@ class MotorClient {
     };
     events.onerror = (event) => {
       if (events.readyState === EventSource.CONNECTING) {
-        this.onDisconnect(event);
+        this.onDisconnect('Motor event stream is disconnected.');
       } else {
         this.onError('Motor event stream has failed.');
       }

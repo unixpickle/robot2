@@ -3,7 +3,9 @@ package motors
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -168,13 +170,13 @@ func (m *MotorController) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MotorController) Status() (map[string]*AnnotatedStatus, error) {
-	statuses, err := m.conn.MotorStatuses(len(m.motorIDs))
-	if err != nil {
-		return nil, err
-	}
 	statusMap := map[string]*AnnotatedStatus{}
-	for k, v := range m.motorIDs {
-		statusMap[k] = m.annotatedStatus(statuses[v-1])
+	for name, id := range m.motorIDs {
+		if status, err := m.conn.MotorStatus(uint8(id)); err != nil {
+			return nil, fmt.Errorf("get status for motor %d failed: %w", id, err)
+		} else {
+			statusMap[name] = m.annotatedStatus(status)
+		}
 	}
 	return statusMap, nil
 }
@@ -201,6 +203,9 @@ func (m *MotorController) SetLimits(limits map[string]MotorLimit) error {
 	m.changeLimitsLock.Lock()
 	defer m.changeLimitsLock.Unlock()
 	m.delayRelax()
+	newLimits := map[string]MotorLimit{}
+	maps.Copy(newLimits, m.limits.Load().(map[string]MotorLimit))
+	maps.Copy(newLimits, limits)
 	for name, limit := range limits {
 		if id, ok := m.motorIDs[name]; !ok {
 			return errUnknownMotor
@@ -209,7 +214,7 @@ func (m *MotorController) SetLimits(limits map[string]MotorLimit) error {
 		}
 		m.delayRelax()
 	}
-	m.limits.Store(limits)
+	m.limits.Store(newLimits)
 	return nil
 }
 
@@ -304,7 +309,11 @@ func (m *MotorController) WaitUntilStill(ctx context.Context) error {
 		if allDone {
 			return nil
 		}
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
 	}
 }
 

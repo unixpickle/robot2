@@ -10,6 +10,8 @@ import (
 // gripper is held pointing down towards the table and optionally
 // rotated by an absolute angle (where 0 always faces the Y+ axis,
 // rather than in the direction the arm happens to be facing.)
+//
+// This may return nil if the solution is not found.
 func HoverPositionToCoordAngles(
 	limitMin, limitMax *MotorAngles,
 	centerPos model3d.Coord3D,
@@ -43,7 +45,9 @@ func HoverPositionToCoordAngles(
 				bestInner = angles
 			}
 		}
-		if best == nil {
+		if bestInner == nil {
+			continue
+		} else if best == nil {
 			best = bestInner
 			continue
 		}

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os/exec"
 	"sync"
 	"time"
@@ -27,11 +26,11 @@ func (c *Client) CameraTrackNames() ([]string, error) {
 }
 
 func (c *Client) Snapshot(trackName string) ([]byte, error) {
-	u := c.baseURL
-	u.Path = "/camera/snapshot"
-	u.RawQuery = "track=" + url.QueryEscape(trackName)
-
-	resp, err := http.Get(u.String())
+	var obj struct {
+		Track string `json:"track"`
+	}
+	obj.Track = trackName
+	resp, err := c.responseForRequest("/camera/snapshot", "", obj)
 	if err != nil {
 		return nil, err
 	}

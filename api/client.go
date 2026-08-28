@@ -43,28 +43,7 @@ func (c *Client) doRequest(path string, objIn, objOut any) error {
 }
 
 func (c *Client) doRequestWithQuery(path, query string, objIn, objOut any) error {
-	u := c.baseURL
-	u.Path = path
-	u.RawQuery = query
-
-	var body io.Reader
-	var method string
-	if objIn == nil {
-		body = nil
-		method = "GET"
-	} else {
-		data, err := json.Marshal(objIn)
-		if err != nil {
-			return err
-		}
-		method = "POST"
-		body = bytes.NewReader(data)
-	}
-	req, err := http.NewRequest(method, u.String(), body)
-	if err != nil {
-		return err
-	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.responseForRequest(path, query, objIn)
 	if err != nil {
 		return err
 	}
@@ -86,4 +65,29 @@ func (c *Client) doRequestWithQuery(path, query string, objIn, objOut any) error
 		return &RemoteError{Message: *fullOut.Error}
 	}
 	return nil
+}
+
+func (c *Client) responseForRequest(path, query string, objIn any) (*http.Response, error) {
+	u := c.baseURL
+	u.Path = path
+	u.RawQuery = query
+
+	var body io.Reader
+	var method string
+	if objIn == nil {
+		body = nil
+		method = "GET"
+	} else {
+		data, err := json.Marshal(objIn)
+		if err != nil {
+			return nil, err
+		}
+		method = "POST"
+		body = bytes.NewReader(data)
+	}
+	req, err := http.NewRequest(method, u.String(), body)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
 }
