@@ -28,6 +28,7 @@ func main() {
 	var lowerer Lowerer
 	var raiser Raiser
 	var fitPath string
+	var holdingOnly bool
 	parseClient := api.AddClientFlags()
 	lowerer.AddFlags()
 	raiser.AddFlags()
@@ -56,6 +57,7 @@ func main() {
 	)
 	flag.StringVar(&fitPath, "fit-path", "", "path to fit_to_table output")
 	flag.StringVar(&outputDir, "output-dir", "", "path where samples are saved")
+	flag.BoolVar(&holdingOnly, "holding-only", false, "if true, never leave the cube unheld; always keep it grasped")
 	flag.Parse()
 
 	if fitPath == "" {
@@ -123,7 +125,9 @@ func main() {
 		time.Sleep(time.Second)
 
 		log.Println(" - readjusting hand around object...")
-		adjustCenter(&lowerer, &raiser, client)
+		if !holdingOnly {
+			adjustCenter(&lowerer, &raiser, client)
+		}
 
 		log.Println(" - lowering...")
 		foundPoint, err := lowerer.Lower(client, xy, gripperAngle)
@@ -133,12 +137,15 @@ func main() {
 		loweredState, err := client.MotorStatuses()
 		essentials.Must(err)
 
-		translation := model2d.XY(-math.Sin(gripperAngle), math.Cos(gripperAngle)).Scale(-insetDistance)
-		raiseAngles, err := raiser.OpenAndRaise(client, translation)
-		essentials.Must(err)
+		var raiseAngles []*kinematics.MotorAngles
+		if !holdingOnly {
+			translation := model2d.XY(-math.Sin(gripperAngle), math.Cos(gripperAngle)).Scale(-insetDistance)
+			raiseAngles, err = raiser.OpenAndRaise(client, translation)
+			essentials.Must(err)
 
-		log.Println(" - homing...")
-		essentials.Must(client.HomeSafely())
+			log.Println(" - homing...")
+			essentials.Must(client.HomeSafely())
+		}
 
 		log.Println(" - recording snapshots and data...")
 		for _, name := range cameraTracks {
@@ -150,10 +157,12 @@ func main() {
 		essentials.Must(recording.WriteJSON("lowered_state", loweredState))
 		essentials.Must(recording.WriteJSON("target", map[string]any{"Coord": xy, "Gripper": gripperAngle}))
 
-		log.Println(" - attempting re-grip of cube...")
-		essentials.Must(raiser.UndoRaise(client, raiseAngles))
-		essentials.Must(client.Move("gripper", kinematics.AngleToPosition(gripperGrasp)))
-		essentials.Must(client.WaitUntilStill())
+		if !holdingOnly {
+			log.Println(" - attempting re-grip of cube...")
+			essentials.Must(raiser.UndoRaise(client, raiseAngles))
+			essentials.Must(client.Move("gripper", kinematics.AngleToPosition(gripperGrasp)))
+			essentials.Must(client.WaitUntilStill())
+		}
 
 		log.Println(" - homing after trajectory...")
 		essentials.Must(client.HomeSafely())

@@ -154,7 +154,7 @@ func (w *CameraController) handleStatus(wr http.ResponseWriter, r *http.Request)
 	for _, t := range w.tracks {
 		var cameraInfo struct {
 			Metrics    *CameraTrackMetrics `json:"metrics"`
-			FirstError *string             `json:"firstError"`
+			FirstError *string             `json:"first_error"`
 		}
 		cameraInfo.Metrics = t.Metrics()
 		if err := t.FirstError(); err != nil {

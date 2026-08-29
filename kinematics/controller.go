@@ -27,6 +27,7 @@ func NewKinematicsController(mc *motors.MotorController) *KinematicsController {
 	mux.HandleFunc("/limitsangles", k.handleLimitsAngles)
 	mux.HandleFunc("/currentangles", k.handleCurrentAngles)
 	mux.HandleFunc("/safehome", k.handleSafeHome)
+	mux.HandleFunc("/reverse/hover", k.handleReverseHover)
 
 	return k
 }
@@ -125,4 +126,12 @@ func (k *KinematicsController) HomeSafely(ctx context.Context) (err error) {
 		}
 	}
 	return nil
+}
+
+func (k *KinematicsController) handleReverseHover(w http.ResponseWriter, r *http.Request) {
+	apiutil.ServeAPI(w, r, func(args *ReverseHoverRequest) (*MotorAngles, error) {
+		min, max := k.LimitsAngles()
+		result := HoverPositionToCoordAngles(min, max, args.CenterPos, args.GripperAngle)
+		return result, nil
+	})
 }

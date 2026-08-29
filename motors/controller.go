@@ -59,10 +59,10 @@ type MotorLimit struct {
 type AnnotatedStatus struct {
 	MotorStatus
 
-	RelativePos       float64    `json:"relativePos"`
-	PositionLimit     MotorLimit `json:"positionLimit"`
-	TargetPos         uint16     `json:"targetPos"`
-	TargetRelativePos float64    `json:"targetRelativePos"`
+	RelativePos       float64    `json:"relative_pos"`
+	PositionLimit     MotorLimit `json:"position_limit"`
+	TargetPos         uint16     `json:"target_pos"`
+	TargetRelativePos float64    `json:"target_relative_pos"`
 }
 
 type MotorController struct {

@@ -17,14 +17,14 @@ const (
 
 type MotorStatus struct {
 	ID         uint8      `json:"id"`
-	ErrorFlags ErrorFlags `json:"errorFlags"`
+	ErrorFlags ErrorFlags `json:"error_flags"`
 
 	Position    int16  `json:"position"`
 	Speed       int16  `json:"speed"`
 	rawLoad     uint16 `json:"-"`
 	rawVoltage  uint8  `json:"-"`
 	Temperature uint8  `json:"temperature"`
-	AsyncFlag   uint8  `json:"asyncFlag"`
+	AsyncFlag   uint8  `json:"async_flag"`
 	Status      uint8  `json:"status"`
 	Moving      uint8  `json:"moving"`
 	rawCurrent  uint16 `json:"-"`

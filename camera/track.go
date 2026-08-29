@@ -13,12 +13,12 @@ import (
 )
 
 type CameraTrackMetrics struct {
-	LastFPS float64 `json:"lastFPS"`
+	LastFPS float64 `json:"last_fps"`
 
 	// Millisecond epoch time
-	LastUpdateTime int64 `json:"lastUpdateTime"`
+	LastUpdateTime int64 `json:"last_update_time"`
 
-	TotalFrames uint64 `json:"totalFrames"`
+	TotalFrames uint64 `json:"total_frames"`
 }
 
 type cameraTrackWaiter struct {

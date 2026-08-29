@@ -16,20 +16,20 @@ interface PositionLimit {
 
 interface MotorStatus {
   id: number;
-  errorFlags: number;
+  error_flags: number;
   position: number;
   speed: number;
   load: number;
   temperature: number;
-  asyncFlag: number;
+  async_flag: number;
   status: number;
   moving: number;
   voltage: number;
   current: number;
-  relativePos: number;
-  positionLimit: PositionLimit;
-  targetPos: number;
-  targetRelativePos: number;
+  relative_pos: number;
+  position_limit: PositionLimit;
+  target_pos: number;
+  target_relative_pos: number;
 }
 
 interface MotorStatuses {
@@ -199,17 +199,17 @@ class SingleMotorView {
   }
 
   handleStatus(status: MotorStatus) {
-    this.stateSlider.setValue(status.position, status.positionLimit);
+    this.stateSlider.setValue(status.position, status.position_limit);
     this.currentLabel.textContent = status.current.toFixed(1) + 'mA';
     this.loadLabel.textContent = status.load + '';
 
     // Only update the slider if the user hasn't touched it recently.
     if (performance.now() - this.lastUserChange > 5000) {
-      this.targetSlider.setValue(status.targetPos, status.positionLimit);
+      this.targetSlider.setValue(status.target_pos, status.position_limit);
     } else {
       this.targetSlider.setValue(
         this.targetSlider.value(),
-        status.positionLimit,
+        status.position_limit,
       );
     }
   }
