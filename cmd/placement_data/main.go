@@ -44,15 +44,15 @@ func main() {
 	flag.Float64Var(
 		&insetDistance,
 		"inset-distance",
-		10,
+		15,
 		"move the locked gripper finger inward by this many mm while regrasping to avoid hitting the edge of the object",
 	)
 	flag.Float64Var(&gripperGrasp, "gripper-grasp", -10.0*math.Pi/180, "angle to grab the gripped object")
 	flag.Float64Var(
 		&regraspThreshold,
 		"regrasp-threshold",
-		4*math.Pi/180,
-		"minimum angle for closed gripper to indicate a successful grasp (default to 4 degrees)",
+		0*math.Pi/180,
+		"minimum angle for closed gripper to indicate a successful grasp (default to 0 degrees)",
 	)
 	flag.StringVar(&fitPath, "fit-path", "", "path to fit_to_table output")
 	flag.StringVar(&outputDir, "output-dir", "", "path where samples are saved")
@@ -89,7 +89,8 @@ func main() {
 		gripperAngle := (rand.Float64() - 0.5) * math.Pi / 2
 
 		canReach := true
-		for _, z := range []float64{lowerer.StartHeight, lowerer.EndHeight} {
+		for _, height := range []float64{lowerer.StartHeight, lowerer.EndHeight} {
+			z := fit.ZForPoint(xy) + height
 			centerPos := model3d.XYZ(xy.X, xy.Y, z)
 			angles := kinematics.HoverPositionToCoordAngles(min, max, centerPos, gripperAngle)
 			if angles == nil {
@@ -156,6 +157,8 @@ func main() {
 
 		log.Println(" - homing after trajectory...")
 		essentials.Must(client.HomeSafely())
+		essentials.Must(client.Move("gripper", kinematics.AngleToPosition(gripperGrasp)))
+		essentials.Must(client.WaitUntilStill())
 
 		// Hopefully allow video to catch up.
 		time.Sleep(time.Second)
@@ -182,12 +185,14 @@ func adjustCenter(lowerer *Lowerer, raiser *Raiser, client *api.Client) {
 	essentials.Must(err)
 
 	// This was manually calibrated around the red cube pickup task.
-	trajectory, err := raiser.OpenAndRaise(client, model2d.XY(0, -10))
+	trajectory, err := raiser.OpenAndRaise(client, model2d.XY(0, -15))
 	essentials.Must(err)
 	for i := range trajectory {
-		trajectory[i].ShoulderPan = -3 * math.Pi / 180
-		trajectory[i].ShoulderLift += 4 * math.Pi / 180
+		trajectory[i].ShoulderPan = -1 * math.Pi / 180
+		trajectory[i].ShoulderLift += 5 * math.Pi / 180
 		trajectory[i].WristRoll = 0
 	}
 	essentials.Must(raiser.UndoRaise(client, trajectory))
+
+	essentials.Must(client.HomeSafely())
 }

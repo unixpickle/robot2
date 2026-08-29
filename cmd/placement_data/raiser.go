@@ -19,7 +19,7 @@ type Raiser struct {
 func (r *Raiser) AddFlags() {
 	flag.Float64Var(&r.ZDelta, "z-delta", 5, "z delta during raise")
 	flag.Float64Var(&r.GripperRelease, "gripper-release", math.Pi/2, "gripper release angle")
-	flag.Float64Var(&r.TotalRaise, "lift-amount", 40, "lift the hand this much after releasing")
+	flag.Float64Var(&r.TotalRaise, "lift-amount", 60, "lift the hand this much after releasing")
 }
 
 func (r *Raiser) OpenAndRaise(

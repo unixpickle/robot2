@@ -17,7 +17,7 @@ type Lowerer struct {
 }
 
 func (l *Lowerer) AddFlags() {
-	flag.Float64Var(&l.StartHeight, "lower-start-height", 100, "start the lower at this height")
+	flag.Float64Var(&l.StartHeight, "lower-start-height", 90, "start the lower at this height")
 	flag.Float64Var(&l.EndHeight, "lower-end-height", 5, "end the lower at this height")
 	flag.IntVar(&l.Steps, "lower-steps", 5, "split the lower into this many steps")
 }
@@ -33,11 +33,11 @@ func (l *Lowerer) Lower(
 	}
 
 	z := l.Fit.ZForPoint(centerPos)
-	delta := (l.StartHeight - l.EndHeight) / float64(l.Steps)
+	delta := (l.EndHeight - l.StartHeight) / float64(l.Steps)
 
 	var foundPoint model3d.Coord3D
 	for i := 0; i <= l.Steps; i++ {
-		p := model3d.XYZ(centerPos.X, centerPos.Y, z+delta*float64(l.Steps-i))
+		p := model3d.XYZ(centerPos.X, centerPos.Y, z+l.StartHeight+delta*float64(i))
 		angles := kinematics.HoverPositionToCoordAngles(min, max, p, gripperAngle)
 		if angles == nil {
 			panic("IK failed")
