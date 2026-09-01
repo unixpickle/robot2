@@ -177,7 +177,16 @@ func (c *Connection) CenterPosition(id uint8) error {
 
 // SetID changes the ID of the given motor.
 func (c *Connection) SetID(id, newID uint8) error {
-	return c.writeEEPROM(id, 5, newID)
+	if err := c.write(id, 55, uint8(0)); err != nil {
+		return fmt.Errorf("failed to unlock EEPROM: %w", err)
+	}
+	if err := c.write(id, 5, newID); err != nil {
+		return fmt.Errorf("failed to set ID: %w", err)
+	}
+	if err := c.write(newID, 55, uint8(1)); err != nil {
+		return fmt.Errorf("failed to lock EEPROM: %w", err)
+	}
+	return nil
 }
 
 func (c *Connection) writeEEPROM(id uint8, addr uint8, data ...any) error {

@@ -197,8 +197,10 @@ func adjustCenter(lowerer *Lowerer, raiser *Raiser, client *api.Client) {
 	trajectory, err := raiser.OpenAndRaise(client, model2d.XY(0, -15))
 	essentials.Must(err)
 	for i := range trajectory {
-		trajectory[i].ShoulderPan = -1 * math.Pi / 180
-		trajectory[i].ShoulderLift += 5 * math.Pi / 180
+		trajectory[i].ShoulderPan = -2 * math.Pi / 180
+		trajectory[i].ShoulderLift -= 5 * math.Pi / 180
+		trajectory[i].ElbowFlex += 7 * math.Pi / 180
+		trajectory[i].WristFlex += 3 * math.Pi / 180
 		trajectory[i].WristRoll = 0
 	}
 	essentials.Must(raiser.UndoRaise(client, trajectory))
