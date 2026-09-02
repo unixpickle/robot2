@@ -175,6 +175,58 @@ func (c *Connection) CenterPosition(id uint8) error {
 	return nil
 }
 
+// MaxTorque gets the maximum value that can be passed to
+// SetTorqueLimit().
+func (c *Connection) MaxTorque(id uint8) (uint16, error) {
+	var value uint16
+	if err := c.read(id, 16, &value); err != nil {
+		return 0, fmt.Errorf("get max torque: %w", err)
+	}
+	return value, nil
+}
+
+// TorqueLimit reads the motor's current torque limit.
+// See MaxTorque and SetTorqueLimit for details.
+func (c *Connection) TorqueLimit(id uint8) (uint16, error) {
+	var value uint16
+	if err := c.read(id, 48, &value); err != nil {
+		return 0, fmt.Errorf("get max torque: %w", err)
+	}
+	return value, nil
+}
+
+// SetTorqueLimit adjusts a motor's maximum torque value.
+// Use MaxTorque to get the maximum value for this register.
+func (c *Connection) SetTorqueLimit(id uint8, limit uint16) error {
+	if err := c.write(id, 48, limit); err != nil {
+		return fmt.Errorf("set torque limit: %w", err)
+	}
+	return nil
+}
+
+// TorqueLimitFrac gets the torque limit as a fraction of the max.
+func (c *Connection) TorqueLimitFrac(id uint8) (float64, error) {
+	limit, err := c.TorqueLimit(id)
+	if err != nil {
+		return 0, err
+	}
+	max, err := c.MaxTorque(id)
+	if err != nil {
+		return 0, err
+	}
+	return float64(limit) / float64(max), nil
+}
+
+// SetTorqueLimitFrac sets the fraction of maximum torque as a limit.
+func (c *Connection) SetTorqueLimitFrac(id uint8, frac float64) error {
+	limit, err := c.MaxTorque(id)
+	if err != nil {
+		return err
+	}
+	value := uint16(float64(limit) * frac)
+	return c.SetTorqueLimit(id, value)
+}
+
 // SetID changes the ID of the given motor.
 func (c *Connection) SetID(id, newID uint8) error {
 	if err := c.write(id, 55, uint8(0)); err != nil {

@@ -29,6 +29,7 @@ func main() {
 	var raiser Raiser
 	var fitPath string
 	var holdingOnly bool
+	var gripperTorqueLimit float64
 	parseClient := api.AddClientFlags()
 	lowerer.AddFlags()
 	raiser.AddFlags()
@@ -58,6 +59,7 @@ func main() {
 	flag.StringVar(&fitPath, "fit-path", "", "path to fit_to_table output")
 	flag.StringVar(&outputDir, "output-dir", "", "path where samples are saved")
 	flag.BoolVar(&holdingOnly, "holding-only", false, "if true, never leave the cube unheld; always keep it grasped")
+	flag.Float64Var(&gripperTorqueLimit, "gripper-torque-limit", 0.2, "torque limit for gripper to avoid holding too hard")
 	flag.Parse()
 
 	if fitPath == "" {
@@ -80,6 +82,7 @@ func main() {
 	min, max, err := client.LimitsAngles()
 	essentials.Must(err)
 
+	essentials.Must(client.SetTorqueLimit("gripper", gripperTorqueLimit))
 	essentials.Must(client.HomeSafely())
 
 	for {

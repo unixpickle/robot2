@@ -142,6 +142,23 @@ func (c *Client) SetTorqueEnabled(motor string, enabled bool) error {
 	return nil
 }
 
+func (c *Client) TorqueLimit(motor string) (float64, error) {
+	var result float64
+	body := motors.TorqueLimitRequest{Motor: motor}
+	if err := c.doRequest("/motor/limits", body, &result); err != nil {
+		return 0, fmt.Errorf("get torque limit: %w", err)
+	}
+	return result, nil
+}
+
+func (c *Client) SetTorqueLimit(motor string, limit float64) error {
+	body := motors.SetTorqueLimitRequest{Motor: motor, Limit: limit}
+	if err := c.doRequest("/motor/settorquelimit", body, nil); err != nil {
+		return fmt.Errorf("set torque limit: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) Move(motor string, pos uint16) error {
 	body := motors.MoveRequest{Motor: motor, Pos: pos}
 	if err := c.doRequest("/motor/move", body, nil); err != nil {

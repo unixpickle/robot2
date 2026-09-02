@@ -77,6 +77,9 @@ type MotorController struct {
 	changeTargetLock sync.Mutex
 	targets          *sync.Map // maps uint8 to uint16
 
+	changeTorqueLimitLock sync.Mutex
+	torqueLimits          *sync.Map // maps uint8 to float64
+
 	listenersLock sync.RWMutex
 	listeners     map[*statusListener]struct{}
 
@@ -93,6 +96,7 @@ func NewMotorController(conn *Connection, ids map[string]uint8) (*MotorControlle
 
 	limits := map[string]MotorLimit{}
 	targets := new(sync.Map)
+	torqueLimits := new(sync.Map)
 	for name, id := range ids {
 		if err := conn.SetOverloadProtection(id, 80, time.Second*2, 20); err != nil {
 			return nil, err
@@ -107,15 +111,21 @@ func NewMotorController(conn *Connection, ids map[string]uint8) (*MotorControlle
 		} else {
 			targets.Store(id, target)
 		}
+		if limit, err := conn.TorqueLimitFrac(id); err != nil {
+			return nil, err
+		} else {
+			torqueLimits.Store(id, limit)
+		}
 	}
 
 	w := &MotorController{
-		motorIDs:    ids,
-		conn:        conn,
-		mux:         mux,
-		targets:     targets,
-		listeners:   map[*statusListener]struct{}{},
-		relaxTicker: time.NewTicker(relaxTimeout),
+		motorIDs:     ids,
+		conn:         conn,
+		mux:          mux,
+		targets:      targets,
+		torqueLimits: torqueLimits,
+		listeners:    map[*statusListener]struct{}{},
+		relaxTicker:  time.NewTicker(relaxTimeout),
 	}
 	w.limits.Store(limits)
 
@@ -125,6 +135,8 @@ func NewMotorController(conn *Connection, ids map[string]uint8) (*MotorControlle
 	mux.HandleFunc("/setlimits", w.handleSetLimits)
 	mux.HandleFunc("/torque", w.handleTorque)
 	mux.HandleFunc("/settorque", w.handleSetTorque)
+	mux.HandleFunc("/torquelimit", w.handleTorqueLimit)
+	mux.HandleFunc("/settorquelimit", w.handleSetTorqueLimit)
 	mux.HandleFunc("/move", w.handleMove)
 	mux.HandleFunc("/waituntilstill", w.handleWaitUntilStill)
 	mux.HandleFunc("/stream", w.handleStream)
@@ -249,6 +261,36 @@ func (m *MotorController) handleSetTorque(w http.ResponseWriter, r *http.Request
 			}
 			return true, nil
 		}
+	})
+}
+
+func (m *MotorController) handleTorqueLimit(w http.ResponseWriter, r *http.Request) {
+	apiutil.ServeAPI(w, r, func(body TorqueLimitRequest) (float64, error) {
+		motorID, ok := m.motorIDs[body.Motor]
+		if !ok {
+			return 0, errUnknownMotor
+		}
+		value, _ := m.torqueLimits.Load(motorID)
+		return value.(float64), nil
+	})
+}
+
+func (m *MotorController) handleSetTorqueLimit(w http.ResponseWriter, r *http.Request) {
+	apiutil.ServeAPI(w, r, func(body SetTorqueLimitRequest) (bool, error) {
+		motorID, ok := m.motorIDs[body.Motor]
+		if !ok {
+			return false, errUnknownMotor
+		}
+		if body.Limit < 0 || body.Limit > 1 {
+			return false, &apiutil.WebError{Code: http.StatusBadRequest, Message: "invalid limit argument"}
+		}
+		m.changeLimitsLock.Lock()
+		err := m.conn.SetTorqueLimitFrac(motorID, body.Limit)
+		if err == nil {
+			m.torqueLimits.Store(motorID, body.Limit)
+		}
+		m.changeLimitsLock.Unlock()
+		return true, err
 	})
 }
 
