@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -72,7 +73,7 @@ func main() {
 	http.Handle("/camera/", http.StripPrefix("/camera", camController))
 	http.Handle("/motor/", http.StripPrefix("/motor", motorController))
 	http.Handle("/kinematics/", http.StripPrefix("/kinematics", kinematicsController))
-	http.Handle("/", http.FileServer(http.Dir(webDir)))
+	http.Handle("/", http.FileServer(http.FS(os.DirFS(webDir))))
 
 	log.Printf("attempting to listen at %s...", addr)
 	http.ListenAndServe(addr, nil)
