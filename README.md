@@ -22,11 +22,11 @@ is internal to the robot or has to do with invalid POST request data.
 
 The low-level motors API has some endpoints:
 
-- `/motors/names` - call with a `GET` request; returns JSON array of strings
-- `/motors/status` - returns a dictionary mapping motor names to status dictionaries.
-- `/motors/limits` - returns a map from motor name to dictionaries with `min` and `max` keys in range `[0, 4095]`.
-- `/motors/move` - pass a dictionary with `motor` as the motor name and `pos` as a position in `[0, 4095]`.
-- `/motors/stoprelax` - this request blocks indefinitely, and during a call, it prevents a gradual relaxation mechanism that settles motors towards the direction of torque every few seconds. Use this to prevent the robot from "falling" while processing or thinking about state.
+- `/motor/names` - call with a `GET` request; returns JSON array of strings
+- `/motor/status` - returns a dictionary mapping motor names to status dictionaries.
+- `/motor/limits` - returns a map from motor name to dictionaries with `min` and `max` keys in range `[0, 4095]`.
+- `/motor/move` - pass a dictionary with `motor` as the motor name and `pos` as a position in `[0, 4095]`.
+- `/motor/stoprelax` - this request blocks indefinitely, and during a call, it prevents a gradual relaxation mechanism that settles motors towards the direction of torque every few seconds. Use this to prevent the robot from "falling" while processing or thinking about state.
 
 A higher level "kinematics" API can control motors with angles:
 
