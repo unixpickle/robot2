@@ -29,6 +29,7 @@ require (
 	github.com/pion/transport/v4 v4.0.2 // indirect
 	github.com/pion/turn/v5 v5.0.10 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/unixpickle/ffmpego v0.1.4 // indirect
 	github.com/unixpickle/splaytree v1.2.0 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.48.0 // indirect

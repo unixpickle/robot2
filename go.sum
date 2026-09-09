@@ -44,8 +44,11 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/unixpickle/essentials v1.1.0/go.mod h1:dQ1idvqrgrDgub3mfckQm7osVPzT3u9rB6NK/LEhmtQ=
 github.com/unixpickle/essentials v1.3.0 h1:H258Z5Uo1pVzFjxD2rwFWzHPN3s0J0jLs5kuxTRSfCs=
 github.com/unixpickle/essentials v1.3.0/go.mod h1:dQ1idvqrgrDgub3mfckQm7osVPzT3u9rB6NK/LEhmtQ=
+github.com/unixpickle/ffmpego v0.1.4 h1:KeBB42KLgu8dG9wHDu/YVDQxt2WHK9vRntEJfhmfJKI=
+github.com/unixpickle/ffmpego v0.1.4/go.mod h1:/FhjiVp7FU7ai+ivSdWDw6KY4FdTYiwS5zp3oiXOrt4=
 github.com/unixpickle/h264framer v0.1.0 h1:Z7sTwolYWSxEu7GWtyF3pHsNCHE8I3OIkVdK7Yo1aqA=
 github.com/unixpickle/h264framer v0.1.0/go.mod h1:SKumU+g9C+uiP/StBDHHWjtIbxZgsNDnlWmn4m1WkTo=
 github.com/unixpickle/model3d v0.4.20 h1:5IqZvtrQjnwAck4KLWzp0oByfP2De8zq8EKlldBcPKc=
