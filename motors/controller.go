@@ -460,7 +460,7 @@ func (m *MotorController) stateLoop() {
 }
 
 func (m *MotorController) delayRelax() {
-	m.relaxTicker.Reset(relaxTimeout)
+	m.relaxTicker.Reset(m.relaxTimeout)
 }
 
 func (m *MotorController) relaxLoop() {
