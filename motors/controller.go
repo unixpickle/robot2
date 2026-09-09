@@ -83,7 +83,8 @@ type MotorController struct {
 	listenersLock sync.RWMutex
 	listeners     map[*statusListener]struct{}
 
-	relaxTicker *time.Ticker
+	relaxTicker  *time.Ticker
+	relaxTimeout time.Duration
 }
 
 // NewMotorController creates a controller with the given motor ID mapping.
@@ -126,6 +127,7 @@ func NewMotorController(conn *Connection, ids map[string]uint8) (*MotorControlle
 		torqueLimits: torqueLimits,
 		listeners:    map[*statusListener]struct{}{},
 		relaxTicker:  time.NewTicker(relaxTimeout),
+		relaxTimeout: relaxTimeout,
 	}
 	w.limits.Store(limits)
 
@@ -141,6 +143,7 @@ func NewMotorController(conn *Connection, ids map[string]uint8) (*MotorControlle
 	mux.HandleFunc("/waituntilstill", w.handleWaitUntilStill)
 	mux.HandleFunc("/stream", w.handleStream)
 	mux.HandleFunc("/calibratecenter", w.handleCalibrateCenter)
+	mux.HandleFunc("/stoprelax", w.handleStopRelax)
 
 	go w.stateLoop()
 	go w.relaxLoop()
@@ -387,6 +390,18 @@ func (m *MotorController) handleCalibrateCenter(w http.ResponseWriter, r *http.R
 		}
 	}
 	apiutil.ServeData(w, true)
+}
+
+func (m *MotorController) handleStopRelax(w http.ResponseWriter, r *http.Request) {
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+		}
+		m.delayRelax()
+		time.Sleep(m.relaxTimeout / 2)
+	}
 }
 
 func (m *MotorController) annotatedStatus(status *MotorStatus) *AnnotatedStatus {
