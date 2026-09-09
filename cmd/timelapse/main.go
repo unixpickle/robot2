@@ -42,11 +42,11 @@ func main() {
 	trackNames, err := client.CameraTrackNames()
 	essentials.Must(err)
 
-	exitCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	exitCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	go func() {
 		// Prevent catching more than one Ctrl+C to allow force exit.
 		<-exitCtx.Done()
-		cancel()
+		stop()
 	}()
 
 	var wg sync.WaitGroup
